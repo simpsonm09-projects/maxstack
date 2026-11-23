@@ -21,23 +21,33 @@ const CASE_SENSITIVE = /(?<![\w-])-c(?:eq|ne|contains|notcontains|in|notin|like|
 // $null: a comparison with $null, a number, or a boolean is not a name comparison. A comparison of two variables is reviewed
 // by hand (see Install-Ordinal.ps1).
 const PLAIN = /(?<![\w-])-(?:eq|ne|in|notin|contains|notcontains|like|notlike)\b/i;
-const IGNORE_CASE = /(?<![\w-])-i(?:eq|ne|contains|notcontains|in|notin|like|notlike|match|notmatch)\b/i;
+const IGNORE_CASE =
+  /(?<![\w-])-i(?:eq|ne|contains|notcontains|in|notin|like|notlike|match|notmatch)\b/i;
 const MEMBERSHIP = /(?<![\w-])-(?:contains|notcontains|in|notin)\b/i;
 const STRING_METHOD = /\.(StartsWith|EndsWith|IndexOf)\(/gi;
-const QUOTED_OPERAND = /-(?:eq|ne|in|notin|contains|notcontains|like|notlike)\s+(?:@\(\s*)?['"]|['"]\s*\)?\s*-(?:eq|ne|in|notin|contains|notcontains|like|notlike)\b/i;
+const QUOTED_OPERAND =
+  /-(?:eq|ne|in|notin|contains|notcontains|like|notlike)\s+(?:@\(\s*)?['"]|['"]\s*\)?\s*-(?:eq|ne|in|notin|contains|notcontains|like|notlike)\b/i;
 const OBJECT_UNIQUE = /\b(?:Sort-Object|Select-Object|Get-Unique)\b.*(?<![\w-])-Unique\b/i;
 const CASE_SENSITIVE_SWITCH = /(?<![\w-])-CaseSensitive\b/i;
 const EXEMPTION = /#\s*ordinal-ok:\s*(\S.*?)\s*$/;
 
 const HELPER_FOR_OPERATOR = {
-  ceq: 'Test-OrdinalEqual', eq: 'Test-OrdinalEqual',
-  cne: '-not Test-OrdinalEqual', ne: '-not Test-OrdinalEqual',
-  ccontains: 'Test-OrdinalIn (value first)', contains: 'Test-OrdinalIn (value first)',
-  cnotcontains: '-not Test-OrdinalIn (value first)', notcontains: '-not Test-OrdinalIn (value first)',
-  cin: 'Test-OrdinalIn', in: 'Test-OrdinalIn',
-  cnotin: '-not Test-OrdinalIn', notin: '-not Test-OrdinalIn',
-  clike: 'Test-OrdinalEqual, or a [string]::Equals check', like: 'Test-OrdinalEqual, or a [string]::Equals check',
-  cnotlike: '-not Test-OrdinalEqual, or a [string]::Equals check', notlike: '-not Test-OrdinalEqual, or a [string]::Equals check',
+  ceq: 'Test-OrdinalEqual',
+  eq: 'Test-OrdinalEqual',
+  cne: '-not Test-OrdinalEqual',
+  ne: '-not Test-OrdinalEqual',
+  ccontains: 'Test-OrdinalIn (value first)',
+  contains: 'Test-OrdinalIn (value first)',
+  cnotcontains: '-not Test-OrdinalIn (value first)',
+  notcontains: '-not Test-OrdinalIn (value first)',
+  cin: 'Test-OrdinalIn',
+  in: 'Test-OrdinalIn',
+  cnotin: '-not Test-OrdinalIn',
+  notin: '-not Test-OrdinalIn',
+  clike: 'Test-OrdinalEqual, or a [string]::Equals check',
+  like: 'Test-OrdinalEqual, or a [string]::Equals check',
+  cnotlike: '-not Test-OrdinalEqual, or a [string]::Equals check',
+  notlike: '-not Test-OrdinalEqual, or a [string]::Equals check',
 };
 
 // The code of one line, without a trailing comment. A '#' inside a quoted string does not start a comment.
@@ -114,17 +124,28 @@ export function lineViolation(line) {
   }
   const ignoreCase = IGNORE_CASE.exec(code);
   if (ignoreCase) {
-    const helper = /-i(?:in|notin|contains|notcontains)\b/i.test(ignoreCase[0]) ? 'Test-OrdinalIn (value first)' : 'Test-OrdinalEqualIgnoreCase';
+    const helper = /-i(?:in|notin|contains|notcontains)\b/i.test(ignoreCase[0])
+      ? 'Test-OrdinalIn (value first)'
+      : 'Test-OrdinalEqualIgnoreCase';
     return { operator: ignoreCase[0].toLowerCase(), helper };
   }
   const membership = MEMBERSHIP.exec(code);
-  if (membership) return { operator: membership[0].toLowerCase(), helper: 'Test-OrdinalIn (value first)' };
+  if (membership)
+    return { operator: membership[0].toLowerCase(), helper: 'Test-OrdinalIn (value first)' };
   const method = singleArgumentMethod(code);
   if (method) {
-    return { operator: `.${method}(one argument)`, helper: `the ordinal overload, .${method}(<value>, [StringComparison]::Ordinal)` };
+    return {
+      operator: `.${method}(one argument)`,
+      helper: `the ordinal overload, .${method}(<value>, [StringComparison]::Ordinal)`,
+    };
   }
-  if (OBJECT_UNIQUE.test(code)) return { operator: 'Sort-Object or Select-Object -Unique', helper: 'Get-OrdinalUnique and Get-OrdinalSorted' };
-  if (CASE_SENSITIVE_SWITCH.test(code)) return { operator: '-CaseSensitive', helper: 'Get-OrdinalSorted or Test-OrdinalEqual' };
+  if (OBJECT_UNIQUE.test(code))
+    return {
+      operator: 'Sort-Object or Select-Object -Unique',
+      helper: 'Get-OrdinalUnique and Get-OrdinalSorted',
+    };
+  if (CASE_SENSITIVE_SWITCH.test(code))
+    return { operator: '-CaseSensitive', helper: 'Get-OrdinalSorted or Test-OrdinalEqual' };
   return null;
 }
 
@@ -154,7 +175,10 @@ export function scanText(text, file) {
 // The installer scripts the guard covers: scripts/Install-*.ps1.
 // Every PowerShell script in scripts/, so a culture-aware comparison in any of them is found.
 export function installerScripts(scriptsDir) {
-  return readdirSync(scriptsDir).filter((name) => name.endsWith('.ps1')).sort().map((name) => join(scriptsDir, name));
+  return readdirSync(scriptsDir)
+    .filter((name) => name.endsWith('.ps1'))
+    .sort()
+    .map((name) => join(scriptsDir, name));
 }
 
 // Scans every installer script under scriptsDir.
@@ -173,6 +197,8 @@ export function scanInstallers(scriptsDir) {
 
 // The one message a violation prints: where it is, what it uses, and the helper to use instead.
 export function describeViolation(violation) {
-  return `${violation.file}:${violation.line}: ${violation.operator} is culture-aware; use ${violation.helper} from scripts/Install-Ordinal.ps1 (or ` +
-    `add "# ordinal-ok: <reason>" only for numbers, booleans, or values the boundary check proved ASCII): ${violation.text}`;
+  return (
+    `${violation.file}:${violation.line}: ${violation.operator} is culture-aware; use ${violation.helper} from scripts/Install-Ordinal.ps1 (or ` +
+    `add "# ordinal-ok: <reason>" only for numbers, booleans, or values the boundary check proved ASCII): ${violation.text}`
+  );
 }

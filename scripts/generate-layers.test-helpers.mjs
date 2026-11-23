@@ -1,6 +1,15 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -17,7 +26,10 @@ export function withTemp(run) {
     run(root);
   } finally {
     const rel = relative(tempRoot, root);
-    assert.ok(rel && !rel.startsWith(`..${sep}`) && rel !== '..', 'cleanup target stays inside the temp root');
+    assert.ok(
+      rel && !rel.startsWith(`..${sep}`) && rel !== '..',
+      'cleanup target stays inside the temp root',
+    );
     assert.ok(lstatSync(root).isDirectory(), 'cleanup target is the created directory');
     rmSync(root, { recursive: true, force: true });
   }
@@ -39,11 +51,21 @@ export function skillText(name = 'sample', description = 'A sample skill') {
 export function makeLayer(root, name, options = {}) {
   const layer = join(root, name);
   const skills = options.skills ?? { sample: skillText('sample') };
-  if (options.plugin !== null) write(layer, '.claude-plugin/plugin.json', JSON.stringify({ name: options.plugin ?? name, version: '0.1.0' }));
-  for (const [skill, text] of Object.entries(skills)) write(layer, `skills/${skill}/SKILL.md`, text);
+  if (options.plugin !== null)
+    write(
+      layer,
+      '.claude-plugin/plugin.json',
+      JSON.stringify({ name: options.plugin ?? name, version: '0.1.0' }),
+    );
+  for (const [skill, text] of Object.entries(skills))
+    write(layer, `skills/${skill}/SKILL.md`, text);
   for (const [path, bytes] of Object.entries(options.files ?? {})) write(layer, path, bytes);
   if (options.fragment !== undefined) {
-    write(layer, 'opencode.fragment.jsonc', typeof options.fragment === 'string' ? options.fragment : JSON.stringify(options.fragment));
+    write(
+      layer,
+      'opencode.fragment.jsonc',
+      typeof options.fragment === 'string' ? options.fragment : JSON.stringify(options.fragment),
+    );
   }
   return layer;
 }

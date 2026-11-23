@@ -7,18 +7,27 @@ export const RUNTIMES = ['claude', 'copilot', 'cursor', 'opencode', 'pi'];
 // Every path is relative to the output directory. Nothing is written here.
 export function planGeneration(runtime, layers) {
   if (!RUNTIMES.includes(runtime)) {
-    throw new Error(`unsupported runtime ${JSON.stringify(runtime)}; expected ${RUNTIMES.join(', ')}`);
+    throw new Error(
+      `unsupported runtime ${JSON.stringify(runtime)}; expected ${RUNTIMES.join(', ')}`,
+    );
   }
   const files = new Map();
   const bareNames = new Set();
   for (const layer of layers) {
     if (runtime === 'claude' || runtime === 'copilot') {
-      addFile(files, `.claude/plugins/${layer.name}/.claude-plugin/plugin.json`, jsonBytes({ name: layer.name }), [layer.name]);
+      addFile(
+        files,
+        `.claude/plugins/${layer.name}/.claude-plugin/plugin.json`,
+        jsonBytes({ name: layer.name }),
+        [layer.name],
+      );
     }
     for (const skill of layer.skills) {
-      if (runtime === 'opencode' || runtime === 'pi' || runtime === 'cursor') claimBareName(bareNames, skill.name);
+      if (runtime === 'opencode' || runtime === 'pi' || runtime === 'cursor')
+        claimBareName(bareNames, skill.name);
       const base = skillBase(runtime, layer.name);
-      for (const file of skill.files) addFile(files, `${base}/${skill.name}/${file.path}`, file.bytes, [layer.name]);
+      for (const file of skill.files)
+        addFile(files, `${base}/${skill.name}/${file.path}`, file.bytes, [layer.name]);
     }
   }
   projectServers(runtime, layers, files);
@@ -63,8 +72,12 @@ function projectServers(runtime, layers, files) {
   }
   if (!merged.size) return;
   if (runtime !== 'opencode') {
-    throw new Error(`nonempty MCP is not projected for ${runtime}: its delivery is unverified; remove the servers or target opencode`);
+    throw new Error(
+      `nonempty MCP is not projected for ${runtime}: its delivery is unverified; remove the servers or target opencode`,
+    );
   }
-  const servers = Object.fromEntries([...merged].sort(([left], [right]) => compareUtf8(left, right)));
+  const servers = Object.fromEntries(
+    [...merged].sort(([left], [right]) => compareUtf8(left, right)),
+  );
   files.set('opencode.jsonc', { bytes: jsonBytes({ mcp: { servers } }), layers: contributors });
 }

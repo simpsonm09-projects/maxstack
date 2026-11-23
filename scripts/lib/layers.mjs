@@ -1,7 +1,15 @@
 import { readdirSync, readFileSync, lstatSync } from 'node:fs';
 import { basename, join, resolve } from 'node:path';
 import { decodeUtf8, isObject, parseJsonStrict } from './json.mjs';
-import { assertNoLinkedPath, compareUtf8, rejectDevicePath, safeRelativePath, safeSegment, statBelow, statOrNull } from './paths.mjs';
+import {
+  assertNoLinkedPath,
+  compareUtf8,
+  rejectDevicePath,
+  safeRelativePath,
+  safeSegment,
+  statBelow,
+  statOrNull,
+} from './paths.mjs';
 
 export const LAYER_NAME = /^[a-z0-9][a-z0-9-]*$/;
 const SKILL_NAME = /^[A-Za-z0-9][A-Za-z0-9-]*$/;
@@ -22,7 +30,9 @@ export function layerIdentity(argument) {
   const root = resolve(named ? named[2] : argument);
   const name = named ? named[1] : basename(root);
   if (!LAYER_NAME.test(name)) {
-    throw new Error(`layer name ${JSON.stringify(name)} must be lowercase letters, digits, and hyphens; use name=path to choose one`);
+    throw new Error(
+      `layer name ${JSON.stringify(name)} must be lowercase letters, digits, and hyphens; use name=path to choose one`,
+    );
   }
   return { name, root };
 }
@@ -54,13 +64,22 @@ function loadLayer(name, root, warnings) {
   }
   // A folder with none of these is not a layer. Refusing it stops a mistyped root from
   // reading as "no skills" and removing the output that a real layer produced.
-  const evidence = [statBelow(root, 'skills', label), statBelow(root, MANIFEST, label), statBelow(root, FRAGMENT, label)];
+  const evidence = [
+    statBelow(root, 'skills', label),
+    statBelow(root, MANIFEST, label),
+    statBelow(root, FRAGMENT, label),
+  ];
   if (!evidence.some(Boolean)) {
-    throw new Error(`${label}: ${root} has no skills/, ${MANIFEST}, or ${FRAGMENT}; it is not a layer`);
+    throw new Error(
+      `${label}: ${root} has no skills/, ${MANIFEST}, or ${FRAGMENT}; it is not a layer`,
+    );
   }
   if (evidence[1]) {
     const plugin = readJsonBelow(root, MANIFEST);
-    if (plugin?.name !== name) throw new Error(`${join(root, MANIFEST)}: plugin name ${JSON.stringify(plugin?.name)} must match layer ${name}`);
+    if (plugin?.name !== name)
+      throw new Error(
+        `${join(root, MANIFEST)}: plugin name ${JSON.stringify(plugin?.name)} must match layer ${name}`,
+      );
   }
   return { name, root, servers: readServers(root, name), skills: readSkills(root, name, warnings) };
 }
@@ -92,7 +111,8 @@ function readServers(root, name) {
   onlyKeys(fragment.mcp, ['servers'], `${path}: mcp`);
   const declared = object(fragment.mcp.servers ?? {}, `${path}: mcp.servers`);
   for (const [name, value] of Object.entries(declared)) {
-    if (!MCP_NAME.test(name)) throw new Error(`${path}: invalid MCP server name ${JSON.stringify(name)}`);
+    if (!MCP_NAME.test(name))
+      throw new Error(`${path}: invalid MCP server name ${JSON.stringify(name)}`);
     servers.set(name, serverRecord(value, `${path}: MCP server ${name}`));
   }
   return servers;
@@ -103,7 +123,8 @@ function readServers(root, name) {
 function serverRecord(value, label) {
   const server = object(value, label);
   const record = server.type === 'local' ? localServer(server, label) : remoteServer(server, label);
-  if (server.disabled !== undefined && typeof server.disabled !== 'boolean') throw new Error(`${label}: disabled must be boolean`);
+  if (server.disabled !== undefined && typeof server.disabled !== 'boolean')
+    throw new Error(`${label}: disabled must be boolean`);
   if (server.disabled === true) record.disabled = true;
   return record;
 }
@@ -111,7 +132,11 @@ function serverRecord(value, label) {
 function localServer(server, label) {
   onlyKeys(server, ['type', 'command', 'disabled'], label);
   const command = server.command;
-  if (!Array.isArray(command) || !command.length || !command.every((part) => typeof part === 'string' && part.length)) {
+  if (
+    !Array.isArray(command) ||
+    !command.length ||
+    !command.every((part) => typeof part === 'string' && part.length)
+  ) {
     throw new Error(`${label}: command must be a non-empty array of non-empty strings`);
   }
   return { type: 'local', command: [...command] };
@@ -125,7 +150,9 @@ function remoteServer(server, label) {
 
 function checkedUrl(value, label) {
   if (typeof value !== 'string' || !/^https?:\/\//.test(value) || /[\s\p{Cc}]/u.test(value)) {
-    throw new Error(`${label}: URL must be an http or https URL without whitespace or control characters`);
+    throw new Error(
+      `${label}: URL must be an http or https URL without whitespace or control characters`,
+    );
   }
   let parsed;
   try {
@@ -133,7 +160,8 @@ function checkedUrl(value, label) {
   } catch {
     throw new Error(`${label}: URL is not valid`);
   }
-  if (parsed.username || parsed.password) throw new Error(`${label}: URL credentials are forbidden`);
+  if (parsed.username || parsed.password)
+    throw new Error(`${label}: URL credentials are forbidden`);
   return value;
 }
 
@@ -147,7 +175,8 @@ function readSkills(root, layer, warnings) {
     if (entry.startsWith('.')) continue;
     const path = join(dir, entry);
     const info = lstatSync(path);
-    if (info.isSymbolicLink()) throw new Error(`layer ${layer}: symbolic link or junction at skills/${entry}`);
+    if (info.isSymbolicLink())
+      throw new Error(`layer ${layer}: symbolic link or junction at skills/${entry}`);
     if (!info.isDirectory()) {
       warnings.push(`ignored skills/${entry}: not a skill folder`);
       continue;
@@ -168,14 +197,17 @@ function listEntries(dir, label) {
 function readSkill(dir, name, layer) {
   const label = `${layer}/${name}`;
   safeSegment(name, label);
-  if (!SKILL_NAME.test(name)) throw new Error(`${label}: skill folder names must be letters, digits, and hyphens`);
+  if (!SKILL_NAME.test(name))
+    throw new Error(`${label}: skill folder names must be letters, digits, and hyphens`);
   // Collecting first refuses links, so SKILL.md is never read through one.
   const files = collectFiles(dir, '', label);
   const skill = files.find((file) => file.path === 'SKILL.md');
   if (!skill) throw new Error(`${label}: a file named exactly SKILL.md is required`);
   const fields = frontmatterFields(skill.bytes, `${label}/SKILL.md`);
   if (fields.get('name') !== name) {
-    throw new Error(`${label}: frontmatter name ${JSON.stringify(fields.get('name'))} must equal the folder name`);
+    throw new Error(
+      `${label}: frontmatter name ${JSON.stringify(fields.get('name'))} must equal the folder name`,
+    );
   }
   return { name, files };
 }
@@ -191,7 +223,8 @@ export function frontmatterFields(bytes, label) {
     const match = /^([A-Za-z][\w-]*):\s*(.*)$/.exec(line);
     if (match) fields.set(match[1], unquote(match[2].trim()));
   }
-  if (fields.has('model')) throw new Error(`${label}: frontmatter model is not allowed; maxstack sets no model`);
+  if (fields.has('model'))
+    throw new Error(`${label}: frontmatter model is not allowed; maxstack sets no model`);
   for (const key of ['name', 'description']) {
     if (!fields.get(key)) throw new Error(`${label}: frontmatter ${key} is missing or empty`);
   }
@@ -208,7 +241,8 @@ function collectFiles(dir, prefix, label, files = []) {
     const relative = prefix ? `${prefix}/${entry}` : entry;
     const path = join(dir, entry);
     const info = lstatSync(path);
-    if (info.isSymbolicLink()) throw new Error(`${label}: symbolic link or junction at ${relative}`);
+    if (info.isSymbolicLink())
+      throw new Error(`${label}: symbolic link or junction at ${relative}`);
     if (info.isDirectory()) {
       if (entry !== 'node_modules') collectFiles(path, relative, label, files);
     } else if (info.isFile()) {

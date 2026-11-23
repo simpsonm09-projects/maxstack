@@ -86,11 +86,15 @@ function serialize(value, depth) {
   const inner = '  '.repeat(depth + 1);
   const outer = '  '.repeat(depth);
   if (Array.isArray(value)) {
-    return value.length ? `[\n${value.map((item) => inner + serialize(item, depth + 1)).join(',\n')}\n${outer}]` : '[]';
+    return value.length
+      ? `[\n${value.map((item) => inner + serialize(item, depth + 1)).join(',\n')}\n${outer}]`
+      : '[]';
   }
   const keys = Object.keys(value).sort(compareUtf8);
   if (!keys.length) return '{}';
-  const lines = keys.map((key) => `${inner}${JSON.stringify(key)}: ${serialize(value[key], depth + 1)}`);
+  const lines = keys.map(
+    (key) => `${inner}${JSON.stringify(key)}: ${serialize(value[key], depth + 1)}`,
+  );
   return `{\n${lines.join(',\n')}\n${outer}}`;
 }
 

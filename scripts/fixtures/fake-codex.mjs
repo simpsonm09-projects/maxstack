@@ -16,7 +16,9 @@ for (let index = 0; index < args.length; index++) {
 }
 const definition = configs.find((value) => value.startsWith('hooks.PreToolUse=')) ?? '';
 const command = /command\s*=\s*["']([^"']+)["']/.exec(definition)?.[1] ?? '';
-const currentHash = `sha256:${createHash('sha256').update(`${definition}:${process.env.FAKE_CODEX_HASH_SALT ?? ''}`).digest('hex')}`;
+const currentHash = `sha256:${createHash('sha256')
+  .update(`${definition}:${process.env.FAKE_CODEX_HASH_SALT ?? ''}`)
+  .digest('hex')}`;
 const key = 'C:/scratch/.codex/config.toml:pre_tool_use:0:0';
 
 const lines = createInterface({ input: process.stdin });
@@ -28,12 +30,26 @@ lines.on('line', (line) => {
     return;
   }
   if (message.method === 'initialize' && message.id !== undefined) {
-    process.stdout.write(`${JSON.stringify({ jsonrpc: '2.0', id: message.id, result: { codexHome: '', platformFamily: 'windows', platformOs: 'windows', userAgent: 'fake-codex' } })}\n`);
+    process.stdout.write(
+      `${JSON.stringify({ jsonrpc: '2.0', id: message.id, result: { codexHome: '', platformFamily: 'windows', platformOs: 'windows', userAgent: 'fake-codex' } })}\n`,
+    );
     return;
   }
   if (message.method === 'hooks/list' && message.id !== undefined) {
     const cwd = message.params?.cwds?.[0] ?? '';
-    const hook = { key, currentHash, trustStatus: 'untrusted', eventName: 'preToolUse', handlerType: 'command', command, matcher: 'Bash', timeoutSec: 30, source: 'sessionFlags' };
-    process.stdout.write(`${JSON.stringify({ jsonrpc: '2.0', id: message.id, result: { data: [{ cwd, hooks: [hook], warnings: [], errors: [] }] } })}\n`);
+    const hook = {
+      key,
+      currentHash,
+      trustStatus: 'untrusted',
+      eventName: 'preToolUse',
+      handlerType: 'command',
+      command,
+      matcher: 'Bash',
+      timeoutSec: 30,
+      source: 'sessionFlags',
+    };
+    process.stdout.write(
+      `${JSON.stringify({ jsonrpc: '2.0', id: message.id, result: { data: [{ cwd, hooks: [hook], warnings: [], errors: [] }] } })}\n`,
+    );
   }
 });

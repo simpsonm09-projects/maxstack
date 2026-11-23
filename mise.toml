@@ -1,23 +1,27 @@
+# Tools for maxstack. Versions match the owner standard's pinning table.
+# See https://github.com/simpsonm09-projects/repo-standard/blob/main/docs/linting.md
+
 [tools]
 
 # Task runner
-"aqua:casey/just" = "1.58.0"
+"aqua:casey/just" = "1.59.0"
+
+# CI linters
 "aqua:rhysd/actionlint" = "1.7.12"
 "aqua:zizmorcore/zizmor" = "1.30.1"
-node = "22.23.2"
-python = "3.13.15"
+
+# JavaScript toolchain. Bun formats and lints the .mjs scripts; Node still runs
+# the node:test suites until the C7.3 migration.
+bun = "1.4.5"
+node = "26.13.1"
+"npm:oxlint" = "1.93.0"
+
+# The manifest verifier and the generator tests are Python; TypeScript cannot
+# replace them without the C7.4 migration.
+python = "3.12"
 
 # Linters
 "aqua:grafana/flint" = "0.22.14"
-biome = "2.5.14"
 
 [env]
 FLINT_CONFIG_DIR = ".github/config"
-
-[tasks.lint]
-description = "Run all lints"
-run = "flint run"
-
-[tasks."lint:fix"]
-description = "Auto-fix lint issues"
-run = "flint run --fix"

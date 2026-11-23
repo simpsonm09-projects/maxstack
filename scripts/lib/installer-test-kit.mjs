@@ -3,7 +3,18 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdirSync, writeFileSync, readFileSync, chmodSync, mkdtempSync, rmSync, lstatSync, readlinkSync, readdirSync, existsSync } from 'node:fs';
+import {
+  mkdirSync,
+  writeFileSync,
+  readFileSync,
+  chmodSync,
+  mkdtempSync,
+  rmSync,
+  lstatSync,
+  readlinkSync,
+  readdirSync,
+  existsSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve, dirname, join, delimiter, relative } from 'node:path';
 import { test } from 'node:test';
@@ -29,7 +40,9 @@ export let layersCounter = 0;
 // The installer needs PowerShell 7 (#requires -Version 7.0), so only pwsh is tried. Windows PowerShell 5.1 stops every installer
 // run with a version error, so it is never the shell. Without pwsh the tests skip with that reason.
 export function findShell() {
-  return spawnSync('pwsh', ['-NoProfile', '-Command', 'exit 0'], { windowsHide: true }).status === 0 ? 'pwsh' : null;
+  return spawnSync('pwsh', ['-NoProfile', '-Command', 'exit 0'], { windowsHide: true }).status === 0
+    ? 'pwsh'
+    : null;
 }
 
 export function writeFile(root, rel, content) {
@@ -50,7 +63,8 @@ export function normalizePiWrapperLock(lock) {
   const wrapperHashes = new Set();
   const collect = (value) => {
     if (!value || typeof value !== 'object') return;
-    if (PI_WRAPPER_PATHS.includes(value.path) && typeof value.sha256 === 'string') wrapperHashes.add(value.sha256);
+    if (PI_WRAPPER_PATHS.includes(value.path) && typeof value.sha256 === 'string')
+      wrapperHashes.add(value.sha256);
     for (const child of Object.values(value)) collect(child);
   };
   collect(lock);
@@ -73,30 +87,53 @@ export function isPiWrapperPath(path) {
 // PowerShell colours and wraps its error view, with a "Line |" gutter, so matching
 // a message needs the escape codes, the gutter bars, and the line breaks removed.
 export function plainOutput(run) {
-  return `${run.stdout}\n${run.stderr}`
-    // biome-ignore lint/suspicious/noControlCharactersInRegex: the escape byte is the ANSI colour code being removed
-    .replace(/\x1B\[[0-9;]*m/g, '')
-    .replace(/\s*\|\s*/g, ' ')
-    .replace(/\s+/g, ' ');
+  return (
+    `${run.stdout}\n${run.stderr}`
+      // biome-ignore lint/suspicious/noControlCharactersInRegex: the escape byte is the ANSI colour code being removed
+      .replace(/\x1B\[[0-9;]*m/g, '')
+      .replace(/\s*\|\s*/g, ' ')
+      .replace(/\s+/g, ' ')
+  );
 }
 
 // A local layer stub: an index.ts, a node_modules tree so the installer skips npm, a
 // fragment, a skills folder, a package.json, and a layer.json. A claude runtime needs
 // .claude-plugin in its files list. A pi key adds a pi folder and lists it in the files.
-export function writeLayerStub(root, { claudePlugin = null, manifestName = claudePlugin, withManifest = true, extra = {}, pi = null } = {}) {
+export function writeLayerStub(
+  root,
+  {
+    claudePlugin = null,
+    manifestName = claudePlugin,
+    withManifest = true,
+    extra = {},
+    pi = null,
+  } = {},
+) {
   const files = ['index.ts', 'node_modules', 'package.json', 'skills', ...Object.keys(extra)];
   if (claudePlugin) files.push('.claude-plugin');
   if (pi) files.push('pi');
   writeFile(root, 'index.ts', 'export default {};\n');
   writeFile(root, 'layer.json', JSON.stringify({ files }));
-  writeFile(root, 'package.json', JSON.stringify({ name: manifestName ?? 'layer', version: '0.1.0', ...(pi ? { pi } : {}) }));
-  writeFile(root, 'skills/demo-skill/SKILL.md', '---\nname: demo-skill\ndescription: fixture\n---\nbody\n');
+  writeFile(
+    root,
+    'package.json',
+    JSON.stringify({ name: manifestName ?? 'layer', version: '0.1.0', ...(pi ? { pi } : {}) }),
+  );
+  writeFile(
+    root,
+    'skills/demo-skill/SKILL.md',
+    '---\nname: demo-skill\ndescription: fixture\n---\nbody\n',
+  );
   writeFile(root, 'node_modules/@opencode/plugin/index.js', 'module.exports = {};\n');
   writeFile(root, 'opencode.fragment.jsonc', '{}');
   if (pi) writeFile(root, 'pi/index.ts', 'export default {};\n');
   for (const [rel, content] of Object.entries(extra)) writeFile(root, rel, content);
   if (claudePlugin && withManifest) {
-    writeFile(root, '.claude-plugin/plugin.json', JSON.stringify({ name: manifestName, version: '0.1.0' }));
+    writeFile(
+      root,
+      '.claude-plugin/plugin.json',
+      JSON.stringify({ name: manifestName, version: '0.1.0' }),
+    );
   }
 }
 
@@ -112,25 +149,64 @@ export const SHIPPED_SHRINKWRAP = '{"lockfileVersion": 3, "shippedShrinkwrap": t
 export function makeFixture(base, { npm = false, shipLock = false, shipShrinkwrap = false } = {}) {
   const dir = join(base, 'pstack-src');
   const plugin = 'plugins/pstack';
-  writeFile(dir, `${plugin}/.claude-plugin/plugin.json`, JSON.stringify({ name: 'pstack', version: '0.9.79' }));
+  writeFile(
+    dir,
+    `${plugin}/.claude-plugin/plugin.json`,
+    JSON.stringify({ name: 'pstack', version: '0.9.79' }),
+  );
   for (const skillId of ['poteto-mode', 'setup-pstack', 'principle-laziness-protocol']) {
-    writeFile(dir, `${plugin}/skills/${skillId}/SKILL.md`, `---\nname: ${skillId}\ndescription: fixture\n---\nfixture body\n`);
+    writeFile(
+      dir,
+      `${plugin}/skills/${skillId}/SKILL.md`,
+      `---\nname: ${skillId}\ndescription: fixture\n---\nfixture body\n`,
+    );
   }
   writeFile(dir, `${plugin}/opencode/index.ts`, 'export default {};\n');
-  const packageJson = npm ? { name: 'pstack-opencode', private: true, dependencies: { '@opencode/plugin': '2.0.18' } } : { name: 'pstack-opencode', private: true };
+  const packageJson = npm
+    ? { name: 'pstack-opencode', private: true, dependencies: { '@opencode/plugin': '2.0.18' } }
+    : { name: 'pstack-opencode', private: true };
   writeFile(dir, `${plugin}/opencode/package.json`, JSON.stringify(packageJson));
   if (shipLock) writeFile(dir, `${plugin}/opencode/package-lock.json`, SHIPPED_LOCK);
   if (shipShrinkwrap) writeFile(dir, `${plugin}/opencode/npm-shrinkwrap.json`, SHIPPED_SHRINKWRAP);
-  if (!npm) writeFile(dir, `${plugin}/opencode/node_modules/@opencode/plugin/index.js`, 'module.exports = {};\n');
-  writeFile(dir, `${plugin}/opencode/agents/pstack-agent.md`, '---\ndescription: worker\nmodel: opencode-go/deepseek-v4.1-flash\n---\nbody\nmodel: a body line\n');
-  writeFile(dir, `${plugin}/opencode/agents/pstack-reviewer.md`, '---\ndescription: reviewer\n---\nreview\n');
-  writeFile(dir, `${plugin}/opencode/agents/pstack-comment-sicko.md`, '---\ndescription: comments\n---\ncomments\n');
+  if (!npm)
+    writeFile(
+      dir,
+      `${plugin}/opencode/node_modules/@opencode/plugin/index.js`,
+      'module.exports = {};\n',
+    );
+  writeFile(
+    dir,
+    `${plugin}/opencode/agents/pstack-agent.md`,
+    '---\ndescription: worker\nmodel: opencode-go/deepseek-v4.1-flash\n---\nbody\nmodel: a body line\n',
+  );
+  writeFile(
+    dir,
+    `${plugin}/opencode/agents/pstack-reviewer.md`,
+    '---\ndescription: reviewer\n---\nreview\n',
+  );
+  writeFile(
+    dir,
+    `${plugin}/opencode/agents/pstack-comment-sicko.md`,
+    '---\ndescription: comments\n---\ncomments\n',
+  );
   // The pinned repository root is the Pi package: its pi key names paths under plugins/pstack.
-  writeFile(dir, 'package.json', JSON.stringify({ name: 'pstack', version: '0.9.79', pi: { skills: ['./plugins/pstack/skills'], extensions: ['./plugins/pstack/pi/index.ts'] } }));
+  writeFile(
+    dir,
+    'package.json',
+    JSON.stringify({
+      name: 'pstack',
+      version: '0.9.79',
+      pi: { skills: ['./plugins/pstack/skills'], extensions: ['./plugins/pstack/pi/index.ts'] },
+    }),
+  );
   writeFile(dir, `${plugin}/pi/index.ts`, 'export default {};\n');
   writeFile(dir, 'other/notes.txt', 'outside the plugin folder\n');
   const git = (args) => {
-    const run = spawnSync('git', ['-c', 'user.name=test', '-c', 'user.email=test@example.invalid', ...args], { windowsHide: true, cwd: dir, encoding: 'utf8' });
+    const run = spawnSync(
+      'git',
+      ['-c', 'user.name=test', '-c', 'user.email=test@example.invalid', ...args],
+      { windowsHide: true, cwd: dir, encoding: 'utf8' },
+    );
     assert.equal(run.status, 0, `git ${args.join(' ')} failed: ${run.stderr}`);
     return run.stdout.trim();
   };
@@ -152,7 +228,10 @@ export function writeFakeCopilot(base) {
 // A stand-in for the Pi CLI: it echoes the agent folder, the ask switch, and its arguments.
 export function writeFakePi(base) {
   const path = join(base, 'fake-pi.cmd');
-  writeFileSync(path, '@echo off\r\necho AGENT_DIR=%PI_CODING_AGENT_DIR%\r\necho ASK=%AGENT_ACCESS_PI_ASK%\r\necho ARGS=%*\r\n');
+  writeFileSync(
+    path,
+    '@echo off\r\necho AGENT_DIR=%PI_CODING_AGENT_DIR%\r\necho ASK=%AGENT_ACCESS_PI_ASK%\r\necho ARGS=%*\r\n',
+  );
   return path;
 }
 
@@ -225,7 +304,13 @@ export function buildWorkspace({ withManifests = true, fixture = {} } = {}) {
     const name = layerPath.split('/').pop();
     writeLayerStub(join(workspace, layerPath), { claudePlugin: name, withManifest: withManifests });
   }
-  const ctx = { base, workspace, fixture: makeFixture(base, fixture), fakeCopilot: writeFakeCopilot(base), fakePi: writeFakePi(base) };
+  const ctx = {
+    base,
+    workspace,
+    fixture: makeFixture(base, fixture),
+    fakeCopilot: writeFakeCopilot(base),
+    fakePi: writeFakePi(base),
+  };
   if (fixture.npm) ctx.env = environmentWithNpm(writeFakeNpm(base));
   return ctx;
 }
@@ -235,7 +320,12 @@ export function buildWorkspace({ withManifests = true, fixture = {} } = {}) {
 export function writeLayers(ctx, mutate = null) {
   const manifest = readJson(join(repoRoot, 'layers.json'));
   const pstack = manifest.layers.find((layer) => layer.name === 'pstack');
-  pstack.source = { url: ctx.fixture.url, path: 'plugins/pstack', commit: ctx.fixture.commit, ref: 'test' };
+  pstack.source = {
+    url: ctx.fixture.url,
+    path: 'plugins/pstack',
+    commit: ctx.fixture.commit,
+    ref: 'test',
+  };
   if (mutate) mutate(manifest);
   layersCounter += 1;
   const path = join(ctx.base, `layers-${layersCounter}.json`);
@@ -258,45 +348,97 @@ export function testEnvironment(base) {
 }
 
 // Runs the installer. Copilot and Pi are the stand-ins unless the caller names their command.
-export function runInstaller(shell, ctx, extra = [], { apply = true, layersFile = writeLayers(ctx), env = undefined, installerPath = installer, includeRuntimeCommands = true } = {}) {
-  const copilot = !includeRuntimeCommands || extra.includes('-CopilotCommand') ? [] : ['-CopilotCommand', ctx.fakeCopilot];
-  const pi = !includeRuntimeCommands || extra.includes('-PiCommand') ? [] : ['-PiCommand', ctx.fakePi];
+export function runInstaller(
+  shell,
+  ctx,
+  extra = [],
+  {
+    apply = true,
+    layersFile = writeLayers(ctx),
+    env = undefined,
+    installerPath = installer,
+    includeRuntimeCommands = true,
+  } = {},
+) {
+  const copilot =
+    !includeRuntimeCommands || extra.includes('-CopilotCommand')
+      ? []
+      : ['-CopilotCommand', ctx.fakeCopilot];
+  const pi =
+    !includeRuntimeCommands || extra.includes('-PiCommand') ? [] : ['-PiCommand', ctx.fakePi];
   const args = [
-    '-NoProfile', '-NonInteractive', '-File', installerPath,
-    '-Workspace', ctx.workspace,
+    '-NoProfile',
+    '-NonInteractive',
+    '-File',
+    installerPath,
+    '-Workspace',
+    ctx.workspace,
     ...(layersFile ? ['-LayersFile', layersFile] : []),
     ...copilot,
     ...pi,
     ...(apply ? ['-Apply'] : []),
     ...extra,
   ];
-  return spawnSync(shell, args, { windowsHide: true, encoding: 'utf8', env: testEnvironment(env ?? ctx.env) });
+  return spawnSync(shell, args, {
+    windowsHide: true,
+    encoding: 'utf8',
+    env: testEnvironment(env ?? ctx.env),
+  });
 }
 
-export function runWorkspaceDiscovery(ctx, caseValue, { launchCwd = ctx.base, env = undefined } = {}) {
+export function runWorkspaceDiscovery(
+  ctx,
+  caseValue,
+  { launchCwd = ctx.base, env = undefined } = {},
+) {
   const helper = join(repoRoot, 'scripts', 'Install-WorkspaceDiscovery.ps1').replaceAll("'", "''");
   const encoded = Buffer.from(JSON.stringify(caseValue)).toString('base64');
   const script = join(ctx.base, 'workspace-discovery.ps1');
-  writeFileSync(script, `$ErrorActionPreference = 'Stop'\n$PSStyle.OutputRendering = 'PlainText'\n. '${helper}'\n$caseValue = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${encoded}')) | ConvertFrom-Json -AsHashtable\ntry {\n  switch ($caseValue.kind) {\n    'explicit' { $result = Resolve-MaxstackWorkspace -ExplicitSpecified -ExplicitValue $caseValue.path }\n    'environment' { $result = Resolve-MaxstackWorkspace -ScriptRoot $caseValue.scriptRoot }\n    'scriptRoot' { $result = Resolve-MaxstackWorkspace -ScriptRoot $caseValue.path }\n    'currentDirectory' { $result = Resolve-MaxstackWorkspace -CurrentDirectory $caseValue.path -ScriptRoot $caseValue.scriptRoot }\n    'marker' { $result = Resolve-MaxstackWorkspace -CurrentDirectory $caseValue.path -ScriptRoot $caseValue.scriptRoot }\n    'noWorkspace' { $result = Resolve-MaxstackWorkspace -CurrentDirectory $caseValue.path -ScriptRoot $caseValue.scriptRoot }\n  }\n  [Console]::Out.WriteLine("ORIGIN=$($result.Origin);WORKSPACE=$($result.Workspace)")\n} catch { [Console]::Out.WriteLine($_.Exception.Message); exit 2 }\n`);
+  writeFileSync(
+    script,
+    `$ErrorActionPreference = 'Stop'\n$PSStyle.OutputRendering = 'PlainText'\n. '${helper}'\n$caseValue = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${encoded}')) | ConvertFrom-Json -AsHashtable\ntry {\n  switch ($caseValue.kind) {\n    'explicit' { $result = Resolve-MaxstackWorkspace -ExplicitSpecified -ExplicitValue $caseValue.path }\n    'environment' { $result = Resolve-MaxstackWorkspace -ScriptRoot $caseValue.scriptRoot }\n    'scriptRoot' { $result = Resolve-MaxstackWorkspace -ScriptRoot $caseValue.path }\n    'currentDirectory' { $result = Resolve-MaxstackWorkspace -CurrentDirectory $caseValue.path -ScriptRoot $caseValue.scriptRoot }\n    'marker' { $result = Resolve-MaxstackWorkspace -CurrentDirectory $caseValue.path -ScriptRoot $caseValue.scriptRoot }\n    'noWorkspace' { $result = Resolve-MaxstackWorkspace -CurrentDirectory $caseValue.path -ScriptRoot $caseValue.scriptRoot }\n  }\n  [Console]::Out.WriteLine("ORIGIN=$($result.Origin);WORKSPACE=$($result.Workspace)")\n} catch { [Console]::Out.WriteLine($_.Exception.Message); exit 2 }\n`,
+  );
   const childEnv = testEnvironment(env ?? process.env);
-  for (const key of Object.keys(childEnv)) if (key.toUpperCase() === 'MAXSTACK_WORKSPACE') delete childEnv[key];
+  for (const key of Object.keys(childEnv))
+    if (key.toUpperCase() === 'MAXSTACK_WORKSPACE') delete childEnv[key];
   if (caseValue.kind === 'environment') childEnv.MAXSTACK_WORKSPACE = caseValue.path;
-  return spawnSync(shell, ['-NoProfile', '-NonInteractive', '-File', script], { windowsHide: true, encoding: 'utf8', cwd: launchCwd, env: childEnv });
+  return spawnSync(shell, ['-NoProfile', '-NonInteractive', '-File', script], {
+    windowsHide: true,
+    encoding: 'utf8',
+    cwd: launchCwd,
+    env: childEnv,
+  });
 }
 
 // The installer of MAIN_COMMIT, extracted from git archive into a folder under base. Returns its path.
 export function exportMainInstaller(base) {
-  const archive = spawnSync('git', ['-C', repoRoot, 'archive', '--format=tar', MAIN_COMMIT], { windowsHide: true, maxBuffer: 512 * 1024 * 1024 });
+  const archive = spawnSync('git', ['-C', repoRoot, 'archive', '--format=tar', MAIN_COMMIT], {
+    windowsHide: true,
+    maxBuffer: 512 * 1024 * 1024,
+  });
   assert.equal(archive.status, 0, `git archive ${MAIN_COMMIT} failed: ${archive.stderr}`);
   const repo = join(base, 'upstream-main');
   mkdirSync(repo);
-  const extracted = spawnSync('tar', ['-x', '-f', '-', '-C', repo], { windowsHide: true, input: archive.stdout });
+  const extracted = spawnSync('tar', ['-x', '-f', '-', '-C', repo], {
+    windowsHide: true,
+    input: archive.stdout,
+  });
   assert.equal(extracted.status, 0, `tar could not extract ${MAIN_COMMIT}: ${extracted.stderr}`);
   return join(repo, 'scripts', 'Install-Workspace.ps1');
 }
 
 export function clearInstallOutputs(workspace) {
-  for (const path of ['.claude', '.opencode', '.maxstack', '.pi', 'opencode.jsonc', 'opencode.jsonc.bak', 'stack.lock.json', 'stack.lock.json.bak', 'stack.lock.json.new']) {
+  for (const path of [
+    '.claude',
+    '.opencode',
+    '.maxstack',
+    '.pi',
+    'opencode.jsonc',
+    'opencode.jsonc.bak',
+    'stack.lock.json',
+    'stack.lock.json.bak',
+    'stack.lock.json.new',
+  ]) {
     rmSync(join(workspace, ...path.split('/')), { recursive: true, force: true });
   }
 }
@@ -353,14 +495,25 @@ export function mustApply(ctx, extra = [], options = {}) {
 
 // The no-settings comparisons run against upstream main before the settings slice. Its installer is extracted with
 // git archive, so the commit must be in this checkout.
-export const mainCommitAvailable = spawnSync('git', ['-C', repoRoot, 'cat-file', '-e', `${MAIN_COMMIT}^{commit}`], { windowsHide: true, stdio: 'ignore' }).status === 0;
+export const mainCommitAvailable =
+  spawnSync('git', ['-C', repoRoot, 'cat-file', '-e', `${MAIN_COMMIT}^{commit}`], {
+    windowsHide: true,
+    stdio: 'ignore',
+  }).status === 0;
 
 // A test that compares with MAIN_COMMIT. Without the commit it is skipped locally, with the reason. In CI (CI=true) it
 // fails instead, so a shallow checkout cannot pass by comparing nothing.
 export function withMainCommit(name, body, options) {
-  const reason = skip || (mainCommitAvailable || process.env.CI === 'true' ? false : `commit ${MAIN_COMMIT} is not in this checkout`);
+  const reason =
+    skip ||
+    (mainCommitAvailable || process.env.CI === 'true'
+      ? false
+      : `commit ${MAIN_COMMIT} is not in this checkout`);
   test(name, { skip: reason }, () => {
-    assert.ok(mainCommitAvailable, `commit ${MAIN_COMMIT} is not in this checkout, so the comparison with upstream main cannot run. Fetch that commit and rerun.`);
+    assert.ok(
+      mainCommitAvailable,
+      `commit ${MAIN_COMMIT} is not in this checkout, so the comparison with upstream main cannot run. Fetch that commit and rerun.`,
+    );
     const ctx = buildWorkspace(options);
     try {
       body(ctx);
@@ -388,7 +541,8 @@ export const ZWJ = '\u200d';
 
 export const RLO = '\u202e';
 
-export const escapedChar = (char) => `\\u${char.charCodeAt(0).toString(16).toUpperCase().padStart(4, '0')}`;
+export const escapedChar = (char) =>
+  `\\u${char.charCodeAt(0).toString(16).toUpperCase().padStart(4, '0')}`;
 
 export const lockText = (ctx) => readFileSync(lockPath(ctx), 'utf8');
 
@@ -414,7 +568,8 @@ export function withFreshWorkspace(body) {
   }
 }
 
-export const wrapperText = (ctx, name) => readFileSync(join(ctx.workspace, '.maxstack', 'bin', name), 'utf8');
+export const wrapperText = (ctx, name) =>
+  readFileSync(join(ctx.workspace, '.maxstack', 'bin', name), 'utf8');
 
 // The lock without its timestamp, so two applies of the same workspace compare equal.
 export function withoutTimestamp(lock) {
@@ -485,7 +640,14 @@ export function linkTargetText(path) {
 export function independentSha(root, rule) {
   const lines = [];
   collectTreeLines(root, '', rule, lines);
-  return sha256Upper(Buffer.from(sortUtf8(lines).map((line) => `${line}\n`).join(''), 'utf8'));
+  return sha256Upper(
+    Buffer.from(
+      sortUtf8(lines)
+        .map((line) => `${line}\n`)
+        .join(''),
+      'utf8',
+    ),
+  );
 }
 
 // Whether a folder is left out of the hash: by its name alone under the owned rule, and only at the
@@ -512,7 +674,9 @@ export function collectTreeLines(dir, prefix, rule, lines) {
 }
 
 export function ownedRecord(lock, path, kind, key = '') {
-  return lock.owned.find((record) => record.path === path && record.kind === kind && (record.key ?? '') === key);
+  return lock.owned.find(
+    (record) => record.path === path && record.kind === kind && (record.key ?? '') === key,
+  );
 }
 
 export const ORG_FOLDER = '.opencode/plugins/org-ai-plugin';
@@ -549,7 +713,8 @@ export function selectionOf(ctx) {
 
 export const USER_CONFIG = '{\n  "username": "user"\n}\n';
 
-export const USER_SETTINGS = '{\n  "defaultProvider": "user-provider",\n  "packages": [\n    "user-package"\n  ]\n}\n';
+export const USER_SETTINGS =
+  '{\n  "defaultProvider": "user-provider",\n  "packages": [\n    "user-package"\n  ]\n}\n';
 
 // The user's own files: a config and a Pi settings file with a user key and a user entry, and a note in a folder
 // the installer never writes. An install must leave each of them exactly as it was.
@@ -588,7 +753,8 @@ export function collectSnapshot(dir, prefix, entries, options) {
 
 export function snapshotBytes(full, rel, options = {}) {
   const bytes = readFileSync(full);
-  if (options.normalizePiWrappers && isPiWrapperPath(rel)) return Buffer.from('<pi-wrapper-content>').toString('base64');
+  if (options.normalizePiWrappers && isPiWrapperPath(rel))
+    return Buffer.from('<pi-wrapper-content>').toString('base64');
   if (rel !== 'stack.lock.json') return bytes.toString('base64');
   const lock = JSON.parse(bytes.toString('utf8'));
   delete lock.generatedAt;
@@ -637,14 +803,23 @@ export function ORG_FOLDER_FULL(ctx) {
 export const SCHEMA1 = join(repoRoot, 'scripts', 'fixtures', 'schema1');
 
 export function seedSchema1(ctx, name, files) {
-  for (const [rel, fixtureFile] of files) writeFile(ctx.workspace, rel, readFileSync(join(SCHEMA1, name, `${fixtureFile}.fixture`)));
-  writeFile(ctx.workspace, 'stack.lock.json', readFileSync(join(SCHEMA1, name, 'stack.lock.json.fixture')));
+  for (const [rel, fixtureFile] of files)
+    writeFile(ctx.workspace, rel, readFileSync(join(SCHEMA1, name, `${fixtureFile}.fixture`)));
+  writeFile(
+    ctx.workspace,
+    'stack.lock.json',
+    readFileSync(join(SCHEMA1, name, 'stack.lock.json.fixture')),
+  );
 }
 
 // ---- Layer sources: -Source, the -LayerSource alias, and the recorded override -----------------------------------
 // A git command in a folder. A failing command fails the test, so a fixture that did not build is never a result.
 export function gitRun(dir, args) {
-  const run = spawnSync('git', ['-c', 'user.name=test', '-c', 'user.email=test@example.invalid', ...args], { windowsHide: true, cwd: dir, encoding: 'utf8' });
+  const run = spawnSync(
+    'git',
+    ['-c', 'user.name=test', '-c', 'user.email=test@example.invalid', ...args],
+    { windowsHide: true, cwd: dir, encoding: 'utf8' },
+  );
   assert.equal(run.status, 0, `git ${args.join(' ')} failed: ${run.stderr}`);
   return run.stdout.trim();
 }
@@ -652,7 +827,11 @@ export function gitRun(dir, args) {
 // The test stand-in for github.com. MAXSTACK_TEST_GITHUB_ROOT names the folder, and owner/repo resolves to
 // <root>/<owner>/<repo>.git. GIT_TERMINAL_PROMPT stops git from waiting for a credential.
 export function githubEnv(ctx) {
-  return { ...process.env, MAXSTACK_TEST_GITHUB_ROOT: join(ctx.base, 'github'), GIT_TERMINAL_PROMPT: '0' };
+  return {
+    ...process.env,
+    MAXSTACK_TEST_GITHUB_ROOT: join(ctx.base, 'github'),
+    GIT_TERMINAL_PROMPT: '0',
+  };
 }
 
 export function remoteUrl(ctx, owner, repo) {
@@ -675,7 +854,10 @@ export function commitToBranch(ctx, bare, branch, relPath, content) {
   const work = join(ctx.base, 'work');
   if (!existsSync(work)) gitRun(ctx.base, ['clone', '--quiet', bare, work]);
   gitRun(work, ['fetch', '--quiet', 'origin']);
-  const hasBranch = spawnSync('git', ['-C', bare, 'rev-parse', '--verify', '--quiet', `refs/heads/${branch}`], { windowsHide: true }).status === 0;
+  const hasBranch =
+    spawnSync('git', ['-C', bare, 'rev-parse', '--verify', '--quiet', `refs/heads/${branch}`], {
+      windowsHide: true,
+    }).status === 0;
   gitRun(work, ['checkout', '-q', '-B', branch, hasBranch ? `origin/${branch}` : 'origin/HEAD']);
   writeFile(work, relPath, content);
   gitRun(work, ['add', '-A']);
@@ -688,7 +870,8 @@ export const SKILL_PATH = 'plugins/pstack/skills/poteto-mode/SKILL.md';
 
 export const SKILL_FEAT = '---\nname: poteto-mode\ndescription: fixture\n---\nfeat body\n';
 
-export const installedSkill = (ctx) => join(ctx.workspace, '.opencode', 'plugins', 'pstack', 'skills', 'poteto-mode', 'SKILL.md');
+export const installedSkill = (ctx) =>
+  join(ctx.workspace, '.opencode', 'plugins', 'pstack', 'skills', 'poteto-mode', 'SKILL.md');
 
 // pstack served as simpsonm09/pstack-max, with a feat branch that changes its skill.
 export function servedFeature(ctx) {
@@ -712,7 +895,11 @@ export function sourceBlockOf(stdout) {
   const header = lines.indexOf('Layer sources not at their committed pin:');
   if (header < 0) return null;
   const firstState = lines.findIndex((line, index) => index > header && STATE_ROW.test(line));
-  return { header, lines: lines.slice(header + 1, firstState < 0 ? undefined : firstState), firstState };
+  return {
+    header,
+    lines: lines.slice(header + 1, firstState < 0 ? undefined : firstState),
+    firstState,
+  };
 }
 
 // -Update: a branch or tag override moves to its current commit, a commit pin and a default pin do not, and a local
@@ -732,7 +919,11 @@ export const SHORTHAND_URL = 'https://github.com/simpsonm09/pstack-max.git';
 
 export function resolveShorthand(env) {
   const script = `. '${layerSourcesFile}'; Get-GitHubRemoteUrl -Owner 'simpsonm09' -Repo 'pstack-max'`;
-  return spawnSync(shell, ['-NoProfile', '-NonInteractive', '-Command', script], { windowsHide: true, encoding: 'utf8', env });
+  return spawnSync(shell, ['-NoProfile', '-NonInteractive', '-Command', script], {
+    windowsHide: true,
+    encoding: 'utf8',
+    env,
+  });
 }
 
 export function sourceBlockIn(lock, name) {
@@ -743,7 +934,10 @@ export function sourceBlockIn(lock, name) {
 // The 8.3 name of an existing folder, as the filesystem reports it, or null when the folder cannot be read.
 export const shortPathOf = (path) => {
   const script = `(New-Object -ComObject Scripting.FileSystemObject).GetFolder('${path.replaceAll("'", "''")}').ShortPath`;
-  const run = spawnSync(shell, ['-NoProfile', '-NonInteractive', '-Command', script], { windowsHide: true, encoding: 'utf8' });
+  const run = spawnSync(shell, ['-NoProfile', '-NonInteractive', '-Command', script], {
+    windowsHide: true,
+    encoding: 'utf8',
+  });
   return run.status === 0 ? run.stdout.trim() : null;
 };
 
@@ -752,4 +946,7 @@ export const EXISTING_LONG_FOLDER = process.env.ProgramFiles ?? 'C:\\Program Fil
 
 export const EXISTING_SHORT_FOLDER = shortPathOf(EXISTING_LONG_FOLDER);
 
-export const short83Available = Boolean(EXISTING_SHORT_FOLDER) && EXISTING_SHORT_FOLDER !== EXISTING_LONG_FOLDER && /~\d/.test(EXISTING_SHORT_FOLDER.split(/[\\/]/).pop());
+export const short83Available =
+  Boolean(EXISTING_SHORT_FOLDER) &&
+  EXISTING_SHORT_FOLDER !== EXISTING_LONG_FOLDER &&
+  /~\d/.test(EXISTING_SHORT_FOLDER.split(/[\\/]/).pop());

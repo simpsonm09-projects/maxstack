@@ -6,13 +6,16 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { python, repoRoot } from './lib/installer-test-kit.mjs';
 
-test('verifier accepts the shell-escaped apostrophe path and rejects a mismatched projection directory', { skip: !python }, () => {
-  const base = mkdtempSync(join(tmpdir(), 'maxstack-copilot-verifier-'));
-  const workspace = join(base, "O'Brien workspace");
-  const bin = join(workspace, '.maxstack', 'bin');
-  mkdirSync(bin, { recursive: true });
-  try {
-    const script = String.raw`
+test(
+  'verifier accepts the shell-escaped apostrophe path and rejects a mismatched projection directory',
+  { skip: !python },
+  () => {
+    const base = mkdtempSync(join(tmpdir(), 'maxstack-copilot-verifier-'));
+    const workspace = join(base, "O'Brien workspace");
+    const bin = join(workspace, '.maxstack', 'bin');
+    mkdirSync(bin, { recursive: true });
+    try {
+      const script = String.raw`
 import hashlib, importlib.util, pathlib, sys
 module_path, workspace_text = sys.argv[1:]
 sys.path.insert(0, str(pathlib.Path(module_path).parent))
@@ -40,9 +43,14 @@ failures = []
 verifier.check_copilot(lock, workspace, failures)
 assert any('copilot.sh does not project' in failure for failure in failures), failures
 `;
-    const result = spawnSync(python, ['-c', script, join(repoRoot, 'scripts', 'verify-workspace-install.py'), workspace], { encoding: 'utf8', windowsHide: true });
-    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
-  } finally {
-    rmSync(base, { recursive: true, force: true });
-  }
-});
+      const result = spawnSync(
+        python,
+        ['-c', script, join(repoRoot, 'scripts', 'verify-workspace-install.py'), workspace],
+        { encoding: 'utf8', windowsHide: true },
+      );
+      assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    } finally {
+      rmSync(base, { recursive: true, force: true });
+    }
+  },
+);

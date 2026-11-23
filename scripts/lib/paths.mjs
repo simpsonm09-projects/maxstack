@@ -20,10 +20,16 @@ export function statOrNull(path) {
 }
 
 export function safeSegment(segment, label) {
-  const invalid = !segment || segment === '.' || segment === '..' || INVALID_CHARACTERS.test(segment)
-    || /[. ]$/.test(segment) || [...segment].some((char) => char.codePointAt(0) < 32);
+  const invalid =
+    !segment ||
+    segment === '.' ||
+    segment === '..' ||
+    INVALID_CHARACTERS.test(segment) ||
+    /[. ]$/.test(segment) ||
+    [...segment].some((char) => char.codePointAt(0) < 32);
   if (invalid) throw new Error(`${label}: invalid path segment ${JSON.stringify(segment)}`);
-  if (DEVICE_NAME.test(segment)) throw new Error(`${label}: ${JSON.stringify(segment)} is a reserved Windows device name`);
+  if (DEVICE_NAME.test(segment))
+    throw new Error(`${label}: ${JSON.stringify(segment)} is a reserved Windows device name`);
   if (segment.toLowerCase() === '.git') throw new Error(`${label}: .git paths are forbidden`);
   return segment;
 }
@@ -38,7 +44,9 @@ export function safeRelativePath(value, label) {
 
 export function rejectDevicePath(text, label) {
   if (/^[\\/]{2}[?.][\\/]/.test(text) || /^[\\/]{2}[^\\/]/.test(text)) {
-    throw new Error(`${label}: UNC, device, and extended-length paths are not accepted; give a drive path`);
+    throw new Error(
+      `${label}: UNC, device, and extended-length paths are not accepted; give a drive path`,
+    );
   }
 }
 
@@ -51,7 +59,8 @@ export function assertNoLinkedPath(target, label) {
     current = join(current, part);
     const stat = statOrNull(current);
     if (!stat) return;
-    if (stat.isSymbolicLink()) throw new Error(`${label}: symbolic link or junction in the path at ${current}`);
+    if (stat.isSymbolicLink())
+      throw new Error(`${label}: symbolic link or junction in the path at ${current}`);
   }
 }
 
@@ -91,7 +100,8 @@ export function isWithin(child, parent) {
 export function assertNoWorkspace(key) {
   for (let dir = key; ; dir = dirname(dir)) {
     const marker = WORKSPACE_MARKERS.find((name) => statOrNull(join(dir, name)));
-    if (marker) throw new Error(`--out is beneath a detected repository or workspace: ${dir} has ${marker}`);
+    if (marker)
+      throw new Error(`--out is beneath a detected repository or workspace: ${dir} has ${marker}`);
     if (dirname(dir) === dir) return;
   }
 }
