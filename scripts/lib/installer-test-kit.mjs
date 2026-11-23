@@ -218,20 +218,17 @@ export function makeFixture(base, { npm = false, shipLock = false, shipShrinkwra
   return { dir, commit: git(['rev-parse', 'HEAD']), url: `file:///${dir.replaceAll('\\', '/')}` };
 }
 
-// A stand-in for the Copilot CLI: it echoes the account-independent switch and its arguments.
+// A stand-in for the Copilot CLI: it echoes its arguments.
 export function writeFakeCopilot(base) {
   const path = join(base, 'fake-copilot.cmd');
-  writeFileSync(path, '@echo off\r\necho ASK=%AGENT_ACCESS_COPILOT_ASK%\r\necho ARGS=%*\r\n');
+  writeFileSync(path, '@echo off\r\necho ARGS=%*\r\n');
   return path;
 }
 
-// A stand-in for the Pi CLI: it echoes the agent folder, the ask switch, and its arguments.
+// A stand-in for the Pi CLI: it echoes the agent folder and its arguments.
 export function writeFakePi(base) {
   const path = join(base, 'fake-pi.cmd');
-  writeFileSync(
-    path,
-    '@echo off\r\necho AGENT_DIR=%PI_CODING_AGENT_DIR%\r\necho ASK=%AGENT_ACCESS_PI_ASK%\r\necho ARGS=%*\r\n',
-  );
+  writeFileSync(path, '@echo off\r\necho AGENT_DIR=%PI_CODING_AGENT_DIR%\r\necho ARGS=%*\r\n');
   return path;
 }
 

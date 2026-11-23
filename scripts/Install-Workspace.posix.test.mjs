@@ -55,9 +55,9 @@ const ANTIGRAVITY_DEFINITION = `${JSON.stringify(
   2,
 )}\n`;
 
-// The org layer stub ships both gate definitions and their adapters, and lists hooks among its OpenCode items so the
+// The org layer stub ships both hook definitions and their adapters, and lists hooks among its OpenCode items so the
 // installed copy carries them. The definitions name the adapter relative to the plugin folder, as the org plugin does.
-function addGateHooks(ctx) {
+function addHooks(ctx) {
   const root = join(ctx.workspace, ORG_STUB);
   const layer = readJson(join(root, 'layer.json'));
   if (!layer.files.includes('hooks')) layer.files.push('hooks');
@@ -102,7 +102,6 @@ function assertPlatformWrappers(ctx, wrapper, piWrapper) {
   } else {
     const cmdText = readFileSync(join(ctx.workspace, '.maxstack', 'bin', 'copilot.cmd'), 'utf8');
     const shText = readFileSync(join(ctx.workspace, '.maxstack', 'bin', 'copilot.sh'), 'utf8');
-    assert.match(cmdText, /\r\nset "AGENT_ACCESS_COPILOT_ASK=allow"\r\n/);
     assert.match(cmdText, /--plugin-dir .*pstack.*--plugin-dir .*org-ai-plugin/);
     assert.match(shText, /See copilot\.cmd\./);
     assert.ok(!cmdText.startsWith('\uFEFF') && !shText.startsWith('\uFEFF'));
@@ -115,20 +114,20 @@ test(
   () => {
     const ctx = buildWorkspace();
     try {
-      addGateHooks(ctx);
+      addHooks(ctx);
       const copilot = join(ctx.base, posix ? 'copilot' : 'copilot.cmd');
       const pi = posix ? join(ctx.base, 'pi') : ctx.fakePi;
       writeFileSync(
         copilot,
         posix
-          ? '#!/bin/sh\nprintf "ASK=%s\\n" "$AGENT_ACCESS_COPILOT_ASK"\nfor arg in "$@"; do printf "ARG=%s\\n" "$arg"; done\n'
-          : '@echo off\r\necho ASK=%AGENT_ACCESS_COPILOT_ASK%\r\necho ARGS=%*\r\n',
+          ? '#!/bin/sh\nfor arg in "$@"; do printf "ARG=%s\\n" "$arg"; done\n'
+          : '@echo off\r\necho ARGS=%*\r\n',
       );
       if (posix) chmodSync(copilot, 0o755);
       if (posix) {
         writeFileSync(
           pi,
-          '#!/bin/sh\nprintf "AGENT_DIR=%s\\n" "$PI_CODING_AGENT_DIR"\nprintf "ASK=%s\\n" "$AGENT_ACCESS_PI_ASK"\nfor arg in "$@"; do printf "ARG=%s\\n" "$arg"; done\n',
+          '#!/bin/sh\nprintf "AGENT_DIR=%s\\n" "$PI_CODING_AGENT_DIR"\nfor arg in "$@"; do printf "ARG=%s\\n" "$arg"; done\n',
         );
         chmodSync(pi, 0o755);
       }
@@ -173,14 +172,14 @@ test(
       );
       assert.ok(existsSync(join(ctx.workspace, '.agents', 'skills', 'demo-skill', 'SKILL.md')));
       assert.ok(existsSync(join(ctx.workspace, '.cursor', 'skills', 'demo-skill', 'SKILL.md')));
-      // OpenCode is selected, so both gate hooks run the adapter from its installed copy of the org layer.
+      // OpenCode is selected, so both hooks run the adapter from its installed copy of the org layer.
       const cursorHook = join(ctx.workspace, '.cursor', 'hooks.json');
       const antigravityHook = join(ctx.workspace, '.agents', 'hooks.json');
       const installedHooks = posixPath(
         join(ctx.workspace, '.opencode', 'plugins', 'org-ai-plugin', 'hooks'),
       );
-      assert.ok(existsSync(cursorHook), 'the cursor gate hook was not written');
-      assert.ok(existsSync(antigravityHook), 'the antigravity gate hook was not written');
+      assert.ok(existsSync(cursorHook), 'the cursor hook was not written');
+      assert.ok(existsSync(antigravityHook), 'the antigravity hook was not written');
       assert.equal(
         readJson(cursorHook).hooks.beforeShellExecution[0].command,
         `node "${installedHooks}/cursor.mjs"`,
@@ -218,15 +217,15 @@ test(
       );
       assert.ok(existsSync(join(ctx.workspace, '.agents', 'skills', 'demo-skill', 'SKILL.md')));
       assert.ok(existsSync(join(ctx.workspace, '.cursor', 'skills', 'demo-skill', 'SKILL.md')));
-      assert.ok(existsSync(cursorHook), 'removing copilot removed the cursor gate hook');
-      assert.ok(existsSync(antigravityHook), 'removing copilot removed the antigravity gate hook');
+      assert.ok(existsSync(cursorHook), 'removing copilot removed the cursor hook');
+      assert.ok(existsSync(antigravityHook), 'removing copilot removed the antigravity hook');
       assert.equal(runStatus(ctx).status, 0);
 
       const ownedPaths = readJson(lockPath(ctx)).owned.map((record) => record.path);
       const uninstalled = removal(ctx, ['-Uninstall']);
       assert.equal(uninstalled.status, 0, `${uninstalled.stdout}\n${uninstalled.stderr}`);
-      assert.equal(existsSync(cursorHook), false, 'uninstall left the cursor gate hook');
-      assert.equal(existsSync(antigravityHook), false, 'uninstall left the antigravity gate hook');
+      assert.equal(existsSync(cursorHook), false, 'uninstall left the cursor hook');
+      assert.equal(existsSync(antigravityHook), false, 'uninstall left the antigravity hook');
       for (const path of ownedPaths)
         assert.equal(
           existsSync(join(ctx.workspace, ...path.split('/'))),

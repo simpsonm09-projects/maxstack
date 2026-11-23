@@ -74,7 +74,7 @@ A config layer can also register skills through an OpenCode plugin. `org-ai-plug
 | --- | --- | --- |
 | `org-ai-plugin` | `service-integrations` | The general integration registry: which CLI owns each external-service job. It defers personal specifics to the personal layer. |
 | `org-ai-plugin` | `repo-tasks` | Run, build, test, or verify a repository through its justfile. |
-| `org-ai-plugin` | `repo-standard` | The gates, the definition of done, and the branch and pull request flow. |
+| `org-ai-plugin` | `repo-standard` | The definition of done, the branch and pull request flow, and the checkers. |
 | `org-ai-plugin` | `local-services` | The container stack on the machine: Docker, Portainer, Infisical, and DbGate. |
 | `personal-ai-plugin` | `integrations-personal` | The personal concretes the registry defers to, and the `himalaya`, `ntfy`, and `smsgate` services. |
 | `personal-ai-plugin` | `dev-tools` | Where each personal tool's settings live and how to apply them. |

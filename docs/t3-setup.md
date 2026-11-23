@@ -58,7 +58,7 @@ No provider-settings write API is exposed here. The T3 settings UI supports cust
 
 ## T3 model sheet and instance lists
 
-`t3.gatedInstances` lists ids allowed to receive delegated work with this workspace's layers and gate. `t3.readOnlyInstances` lists cheap helpers for reviews, research, and explanation on harnesses without our layers or gate. pstack refuses read-only instances for roles whose helpers can write files, commit, push, or open pull requests. These lists are per machine. maxstack writes both lists beside the model sheet under `.pstack`. Run `setup-pstack` inside T3 to write the model sheet there.
+`t3.gatedInstances` lists ids allowed to receive delegated work with this workspace's layers. `t3.readOnlyInstances` lists cheap helpers for reviews, research, and explanation on harnesses without our layers. pstack refuses read-only instances for roles whose helpers can write files, commit, push, or open pull requests. These lists are per machine. maxstack writes both lists beside the model sheet under `.pstack`. Run `setup-pstack` inside T3 to write the model sheet there.
 
 ## OpenCode
 
@@ -118,21 +118,9 @@ The Copilot provider does not take plugin folders from the instance's arguments.
 
 The wrapper runs the Copilot CLI with one `--plugin-dir` for each layer that lists `copilot`, in layer order: pstack, then the org layer, then the personal layer. Each folder is the same `.claude/plugins` folder Claude Code uses. The wrapper then passes its own arguments through. `copilot.sh` resolves `copilot` from `PATH` when launched.
 
-### The ask switch
-
-The wrapper sets `AGENT_ACCESS_COPILOT_ASK=allow` before it starts Copilot. This is needed because of how T3 handles approval.
-
-The org gate answers a GitHub write that the access level permits with `ask`. Copilot then asks for approval. T3 talks to Copilot over ACP, and ACP auto-denies an `ask`, so without the variable the write would be denied. With the variable set to `allow`, the Copilot adapter turns that `ask` into `allow`. The denial reason and the rewrite stay the same.
-
-The switch changes only that `ask`. Denials still apply, and the repository access level still applies. A call the gate denies is still denied.
-
-A plain interactive `copilot` does not set the variable, so it keeps the prompt. The wrapper sets the variable only in its own process. Your shell and other programs do not see it.
-
-The variable is set in the wrapper, not in the T3 instance, so other Copilot runs are not affected.
-
 ### What works on Copilot
 
-The SessionStart context, the skills, and the org gate work on Copilot. When selected layers declare workspace instructions, the generated Copilot wrapper appends an installer-owned `.maxstack/copilot-instructions` directory to `COPILOT_CUSTOM_INSTRUCTIONS_DIRS`; that directory contains a projected `AGENTS.md`, intended to let Copilot discover the selected-layer instructions from a nested repository. The wrapper preserves any existing comma-separated directory list, and planning refuses a projected instruction path containing a comma because the CLI variable has no escaping syntax. Validation occurs before installer writes, even when Copilot is not installed. The portable workflow on Linux checks wrapper generation and the no-login installer lifecycle. Offline fixtures verify environment and file projection only; a live session still needs a signed-in Copilot and a T3 ACP provider that launches the wrapper. Actual T3 environment inheritance and live instruction consumption remain unverified. See [current delivery state](features/current-alignment.md).
+The SessionStart context and the skills work on Copilot. When selected layers declare workspace instructions, the generated Copilot wrapper appends an installer-owned `.maxstack/copilot-instructions` directory to `COPILOT_CUSTOM_INSTRUCTIONS_DIRS`; that directory contains a projected `AGENTS.md`, intended to let Copilot discover the selected-layer instructions from a nested repository. The wrapper preserves any existing comma-separated directory list, and planning refuses a projected instruction path containing a comma because the CLI variable has no escaping syntax. Validation occurs before installer writes, even when Copilot is not installed. The portable workflow on Linux checks wrapper generation and the no-login installer lifecycle. Offline fixtures verify environment and file projection only; a live session still needs a signed-in Copilot and a T3 ACP provider that launches the wrapper. Actual T3 environment inheritance and live instruction consumption remain unverified. See [current delivery state](features/current-alignment.md).
 
 ## Pi (maxstack)
 
@@ -148,9 +136,7 @@ What Pi loads:
 
 - `packages` lists each layer whose repository-root `package.json` has a `pi` key. For pinned PStack, this is the root of `.claude\cache\pstack`; for local PStack, it is the local checkout root. Both load its Pi extension (`/loop`) and package resources.
 - `skills` lists each layer's installed skills folder under `.claude\plugins`, keeping them in sync with Claude Code.
-- The org layer's Pi tool-call gate is on its `main` branch, and its `package.json` has a `pi` key, so the installer lists the org layer as a package. The installer refuses a `pi` key that names a file, or a `package.json`, that the installed copy does not carry. The org layer's `files` list must therefore include its `pi` folder and `package.json`.
-
-The wrapper sets `AGENT_ACCESS_PI_ASK=allow`, as the Copilot wrapper does, and the org gate reads that variable. So the gate's `ask` becomes `allow` in T3 runs. Denials and the repository access level still apply.
+- The installer lists a layer as a package when its repository-root `package.json` has a `pi` key, and refuses a `pi` key that names a file, or a `package.json`, that the installed copy does not carry.
 
 Known limits:
 
@@ -159,7 +145,7 @@ Known limits:
 
 The Pi harness asks RPC `get_commands` for loaded commands and checks that `/loop` is registered with source `extension`. Its stand-in test reports this check as unverified because the stand-in cannot establish that Pi executed a real extension. Pi documents `get_commands` as listing loaded extension commands. Installer tests cover pinned and local package paths.
 
-Not verified: the `piSimpsonm09` instance in a T3 session, any model turn, a login, an org gate decision under a real Pi session (the rpc probe lists no commands for the gate), and `pi.sh` run with the real Pi CLI. On macOS, nothing in this section has been run.
+Not verified: the `piSimpsonm09` instance in a T3 session, any model turn, a login, and `pi.sh` run with the real Pi CLI. On macOS, nothing in this section has been run.
 
 When the workspace wrapper selected its managed local Pi, `pi update --self` asks npm for the latest package in that
 workspace's `.maxstack/npm` prefix and skips lifecycle scripts. On Windows, the command wrapper delegates validation
@@ -175,11 +161,11 @@ installer apply. The wrappers and `.pi\agent\settings.json` do not depend on the
 
 ### Check Pi without a model
 
-Run `just verify-pi` (or `node scripts/verify-pi-harness.mjs`). It starts the workspace's Pi in RPC mode, the mode T3 uses, against a stub model server on `127.0.0.1` and a scratch agent folder. It needs no model, GPU, or download, and it takes seconds. It asserts that Pi starts and exits 0, that a turn reaches the stub, that one installed skill from each Pi layer (pstack, org, personal) is in the system prompt, that the org gate denies a launcher call, that the denied command does not run, that the denial reaches the model as a tool result, and that the Pi agent folder and the wrapper folder did not change. It exits 0 only when every check passes, and names each failing check otherwise.
+Run `just verify-pi` (or `node scripts/verify-pi-harness.mjs`). It starts the workspace's Pi in RPC mode, the mode T3 uses, against a stub model server on `127.0.0.1` and a scratch agent folder. It needs no model, GPU, or download, and it takes seconds. It asserts that Pi starts and exits 0, that a turn reaches the stub, that one installed skill from each Pi layer (pstack, org, personal) is in the system prompt, and that the Pi agent folder and the wrapper folder did not change. It exits 0 only when every check passes, and names each failing check otherwise.
 
 It writes nothing to the workspace. Its files live in a scratch folder under the temp directory, which it removes on every exit path. It reads the Pi settings and the wrapper, and it never reads an auth file.
 
-It does not prove a real model's answer, the `piSimpsonm09` T3 session, a login, the other runtimes, or the gate's decision on any command except the launcher call.
+It does not prove a real model's answer, the `piSimpsonm09` T3 session, a login, or the other runtimes.
 
 The wrapper cannot take another agent folder, so the check reads the Pi binary the wrapper names and starts it with the wrapper's variables, changed as follows. The agent folder is scratch, not `.pi\agent`. The home folder is scratch, so `~\.pi` and `~\.agents` are not read. The environment is an allow-list, where the wrapper inherits everything. `PI_OFFLINE` and `PI_TELEMETRY` are set. The arguments add `--no-session` and select the stub with `--provider` and `--model`.
 
@@ -206,11 +192,11 @@ Create or configure the `codex_maxstack` provider instance in T3 Code. This work
 
 Codex normally uses the repository root as its project root. The marker makes the workspace the project root, so repositories under it can read its skills and `AGENTS.md`.
 
-### The access gate line
+### The hook line
 
-When a selected layer ships the Codex gate hook and its OpenCode copy is installed, maxstack writes only the `PreToolUse` hook definition to `.codex/config.toml`. It records that file in `stack.lock.json`. It keeps an unowned file, and it keeps a hand-edited owned file. Remove and uninstall delete the file only while it still matches the recorded bytes. If an unowned `.codex/config.toml` already exists, add the hook there by hand.
+When a selected layer ships a Codex hook definition and its OpenCode copy is installed, maxstack writes only the `PreToolUse` hook definition to `.codex/config.toml`. It records that file in `stack.lock.json`. It keeps an unowned file, and it keeps a hand-edited owned file. Remove and uninstall delete the file only while it still matches the recorded bytes. If an unowned `.codex/config.toml` already exists, add the hook there by hand. The org layer ships no hook, so a current install writes none.
 
-After apply, do this once in the workspace folder:
+When a layer does ship a hook, do this once in the workspace folder after apply:
 
 1. Run `codex`.
 2. Choose to trust the workspace folder.
@@ -218,16 +204,7 @@ After apply, do this once in the workspace folder:
 
 Codex lists `/hooks` as its lifecycle hook review command in [the v0.162.1 slash-command source](https://github.com/openai/codex/blob/rust-v0.162.1/codex-rs/tui/src/slash_command.rs). Codex stores project trust and hook approval in the active user config. maxstack never reads or writes that config. Repeat the approval only when apply or `-Status` reports: `the Codex hook changed since the last apply: approve it again in Codex`. Status compares the hook's current hash from `codex app-server` `hooks/list` with the hash in the lock. It cannot see whether the user approved the hook.
 
-The org layer blocks GitHub writes through the Codex `Bash` hook. By owner decision this applies in every repository. Codex does not report a command's working folder to this hook, so the gate cannot select a repository-specific access level.
-
-The gate covers shell commands only, including unified exec. File edits, MCP tools, and hosted tools are outside it. It is a guardrail: Codex skips an unapproved hook, and a missing `node`, hook script, or a timeout lets the command through. The gate turns `ask` into deny. maxstack supports one gate hook and uses the first selected layer that ships one.
-
-### What the gate covers on Codex
-
-- The gate covers shell commands only, through the `Bash` tool, which also covers Codex unified exec. File edits, MCP tools, and hosted tools are outside it.
-- Chained commands are decided by their first word, as on the other harnesses.
-- On Codex the gate is a guardrail and not a hard boundary. Codex skips a hook that is untrusted, cannot start, or times out, and only the exit-0 JSON deny blocks on Windows. A worker or gate failure after the adapter starts is converted to that JSON deny. A missing `node`, a missing hook script, or a timeout lets the command through.
-- A gate `ask` becomes a deny, because Codex PreToolUse cannot ask a person.
+A hook covers shell commands only, including unified exec. File edits, MCP tools, and hosted tools are outside it. It is a guardrail: Codex skips an unapproved hook, and a missing `node`, hook script, or a timeout lets the command through. maxstack supports one hook definition and uses the first selected layer that ships one.
 
 `T3CODE_CODEX_LAUNCH_ARGS` replaces the instance's launch arguments when it is set. With it set, the marker is gone and the session sees no workspace skills.
 
@@ -235,29 +212,29 @@ What Codex receives:
 
 - Skills: each selected layer's skills, as folders under `.agents\skills`. The lock owns each folder.
 - Instructions: the generated workspace root `AGENTS.md`, or an existing user `AGENTS.md` that maxstack kept. Codex reads it only when the launch arguments name `stack.lock.json`. If a root collision sends the shared text to `.maxstack/workspace-instructions.md`, Codex does not load that fallback automatically.
-- The access gate: the org layer's PreToolUse hook from `.codex/config.toml`, when approved in Codex. MCP servers and custom agents are not delivered yet.
+- Hooks: a selected layer's `PreToolUse` hook from `.codex/config.toml`, when a layer ships one and Codex approves it. The org layer ships none. MCP servers and custom agents are not delivered yet.
 
-Verified in a corrected controlled fixture on 2026-10-22 with Codex CLI 0.163.0: the parent workspace contains `stack.lock.json` and a sentinel `AGENTS.md`, while a nested Git repository has no marker. `debug prompt-input` from the nested repository omits the parent sentinel by default and includes it with `-c project_root_markers=["stack.lock.json"]`. The rerunnable `just verify-codex-discovery <native-codex-path>` acceptance check repeats this local CLI test in a synthetic workspace and empty fixture-local `CODEX_HOME`; it prints only a validated version, status, fixed diagnostic category, and sentinel booleans. It needs no login and makes no model call. This establishes local Codex marker semantics only; it does not verify T3 launch arguments, hook invocation or trust, or model inheritance. Hook discovery and trust are measured separately with `codex app-server hooks/list`. A T3 Codex session and a live gated turn are not verified.
+Verified in a corrected controlled fixture on 2026-10-22 with Codex CLI 0.163.0: the parent workspace contains `stack.lock.json` and a sentinel `AGENTS.md`, while a nested Git repository has no marker. `debug prompt-input` from the nested repository omits the parent sentinel by default and includes it with `-c project_root_markers=["stack.lock.json"]`. The rerunnable `just verify-codex-discovery <native-codex-path>` acceptance check repeats this local CLI test in a synthetic workspace and empty fixture-local `CODEX_HOME`; it prints only a validated version, status, fixed diagnostic category, and sentinel booleans. It needs no login and makes no model call. This establishes local Codex marker semantics only; it does not verify T3 launch arguments, hook invocation or trust, or model inheritance. Hook discovery and trust are measured separately with `codex app-server hooks/list`. A T3 Codex session is not verified.
 
 ## Cursor and Antigravity
 
 The opt-in `cursor` runtime copies selected layer skills into `.cursor\skills`. Cursor reads that folder and the generated root `AGENTS.md` when the workspace root is its active project. If a nested repository is the active project, set `-Workspace` to that repository and use the existing local source overrides for sibling layer checkouts. Cursor does not inherit the parent's generated files. If an unowned root `AGENTS.md` blocks generation, the installer keeps it and writes `.maxstack\workspace-instructions.md`; reference that fallback from your own instructions to load it. The fallback is not consumed automatically.
 
-The opt-in `antigravity` runtime copies selected layer skills into `.agents\skills`, shared with Codex. Google documents this workspace location for the Antigravity app, CLI, and IDE. When a selected layer ships the Antigravity gate hook, the installer also writes an owned `.agents\hooks.json` whose command runs the adapter by absolute path. The installer does not configure Antigravity rules, plugins, models, or global settings. The live probe 2026-10-21 ran three T3 Antigravity sessions on Windows 11. They loaded skills from user-global `~/.gemini/config/skills`, but no workspace skills, workspace instructions, or gate hook. The denied probe write reached GitHub (HTTP 404). Keep Antigravity in `t3.readOnlyInstances` as a read-only helper. A standalone Antigravity app or CLI session in the workspace is untested. See [Antigravity skills](features/antigravity.md).
+The opt-in `antigravity` runtime copies selected layer skills into `.agents\skills`, shared with Codex. Google documents this workspace location for the Antigravity app, CLI, and IDE. When a selected layer ships hook definitions, the installer also writes an owned `.agents\hooks.json` whose command runs them by absolute path. The installer does not configure Antigravity rules, plugins, models, or global settings. The live probe 2026-10-21 ran three T3 Antigravity sessions on Windows 11. They loaded skills from user-global `~/.gemini/config/skills`, but no workspace skills or workspace instructions. Keep Antigravity in `t3.readOnlyInstances` as a read-only helper. A standalone Antigravity app or CLI session in the workspace is untested. See [Antigravity skills](features/antigravity.md).
 
-Cursor has no plugin delivery or layer agent delivery. When a selected layer ships the Cursor gate hook, the installer writes an owned `.cursor\hooks.json` whose command runs the adapter by absolute path. Its live skill load, gate hook, and T3 session remain unverified. The live probe 2026-10-21 stopped at the free plan limit: "Upgrade your plan to continue". Fed a documented `beforeShellExecution` payload by hand, the installed hook command returned `permission: deny` with the catalog denial reason.
+Cursor has no plugin delivery or layer agent delivery. When a selected layer ships hook definitions, the installer writes an owned `.cursor\hooks.json` whose command runs them by absolute path. Its live skill load and T3 session remain unverified. The live probe 2026-10-21 stopped at the free plan limit: "Upgrade your plan to continue".
 
-In T3 Antigravity, neither workspace `.agents/hooks.json` nor the per-provider config folder's `hooks.json` loaded the hook. The session cwd was the trusted workspace, and `run_command` arguments matched the adapter. Fed by hand, the installed adapter denied correctly.
+In T3 Antigravity, neither workspace `.agents/hooks.json` nor the per-provider config folder's `hooks.json` loaded a hook. The session cwd was the trusted workspace.
 
 ## Not set up
 
-Cursor and Antigravity have T3 instances. Cursor remains unverified because of the plan limit; Antigravity is a read-only helper without workspace skills, instructions, or the gate.
+Cursor and Antigravity have T3 instances. Cursor remains unverified because of the plan limit; Antigravity is a read-only helper without workspace skills or instructions.
 
 ## Checks
 
 - The audit prints drift for each child and each wrapper without writing anything: `pwsh -File scripts/Install-Workspace.ps1`. It reports `missing`, `differs`, `matches`, or `stale`. A `stale` line also marks a folder under `.opencode/plugins` that no layer names. `-Apply` removes such a folder only when the previous `stack.lock.json` recorded it as a layer folder, or when it is the retired `pstack-opencode` port, and reports any other one as kept.
 - The skill check runs a bounded OpenCode session that loads a skill: `scripts/verify-workspace-skill.sh <provider/model>`. It needs a model because the workspace names none, and its third argument is the time limit.
-- The workspace verifier checks each runtime against `stack.lock.json`: `python scripts/verify-workspace-install.py`. For Copilot it checks each wrapper's hash, the ask switch, the plugin folders in order, and that the executable exists. For Pi it checks each wrapper's hash, the agent folder and ask switch, and that the settings list each recorded package and skills folder, and that each package has a `pi` key.
+- The workspace verifier checks each runtime against `stack.lock.json`: `python scripts/verify-workspace-install.py`. For Copilot it checks each wrapper's hash, the plugin folders in order, and that the executable exists. For Pi it checks each wrapper's hash, the agent folder, and that the settings list each recorded package and skills folder, and that each package has a `pi` key.
 - A live probe from a scratch repository under `projects/repos`: `claude -p --model haiku --plugin-dir <workspace>/.claude/plugins --output-format stream-json --verbose "List the plugin skills you have whose names start with simpsonm09. Reply with just the names."` The init event lists the loaded plugins and skills.
 
 ## Why not `--settings`

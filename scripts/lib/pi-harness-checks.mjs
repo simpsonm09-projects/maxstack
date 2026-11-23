@@ -1,10 +1,7 @@
-// The checks the smoke run asserts. Each takes what the run recorded (the Pi session, the stub's
-// requests, the marker file) and returns { name, ok, detail }. Nothing here starts a process.
-import { existsSync } from 'node:fs';
+// The checks the smoke run asserts. Each takes what the run recorded (the Pi session and the stub's
+// requests) and returns { name, ok, detail }. Nothing here starts a process.
 import { PLAIN_TEXT } from './stub-model-server.mjs';
 
-// The prefix the org gate puts on every denial it returns (gate.mjs denyMessage).
-export const GATE_DENIAL_PREFIX = 'agent-access: denied:';
 const CHAT_PATH = '/v1/chat/completions';
 
 const check = (name, ok, detail) => ({ name, ok: ok === true, detail });
@@ -88,75 +85,6 @@ export function checkPstackExtensionLoaded(session) {
     found
       ? '/loop is registered by an extension'
       : "get_commands did not report PStack's /loop extension command",
-  );
-}
-
-function deniedToolEvent(session) {
-  return session.events.find(
-    (record) =>
-      record.type === 'tool_execution_end' && record.toolName === 'bash' && record.isError === true,
-  );
-}
-
-function resultText(record) {
-  return (record?.result?.content ?? []).map((part) => part.text ?? '').join('');
-}
-
-function madeBashCall(session) {
-  return session.events.some(
-    (record) => record.type === 'tool_execution_start' && record.toolName === 'bash',
-  );
-}
-
-export function checkBashCallMade(session) {
-  const started = madeBashCall(session);
-  return check(
-    'bash-call-was-made',
-    started,
-    started ? 'Pi made the bash call' : 'Pi made no bash call',
-  );
-}
-
-// The gate answered the launcher call with its own denial text, so the gate extension ran for it.
-export function checkGateLoaded(session) {
-  const record = deniedToolEvent(session);
-  const text = record ? resultText(record) : '';
-  const ok = text.startsWith(GATE_DENIAL_PREFIX);
-  return check(
-    'gate-extension-loaded',
-    ok,
-    ok ? text : `bash result was not a gate denial: ${text.slice(0, 120)}`,
-  );
-}
-
-// The denial came back to the model as a tool message in the request that followed the call.
-export function checkDenialReachedModel(stub) {
-  const messages = stub.requests.flatMap((request) => request.body?.messages ?? []);
-  const toolText = messages
-    .filter((message) => message.role === 'tool' && typeof message.content === 'string')
-    .map((message) => message.content)
-    .find((text) => text.startsWith(GATE_DENIAL_PREFIX));
-  return check(
-    'denial-reached-model',
-    Boolean(toolText),
-    toolText ? toolText : 'no gate denial in any tool message',
-  );
-}
-
-// The denied command would have written the marker. Its absence shows the command did not run, but
-// only when Pi made the bash call at all: with no call, nothing was tested and the check fails.
-export function checkDeniedNotRun(markerPath, session) {
-  if (!madeBashCall(session))
-    return check(
-      'denied-command-did-not-run',
-      false,
-      'Pi made no bash call, so nothing was tested',
-    );
-  const ran = existsSync(markerPath);
-  return check(
-    'denied-command-did-not-run',
-    !ran,
-    ran ? 'the denied command ran and wrote its marker' : 'no marker written',
   );
 }
 

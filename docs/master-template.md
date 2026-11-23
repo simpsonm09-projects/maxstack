@@ -38,7 +38,7 @@ Three behaviors constrain the design:
 
 ## Design
 
-1. **Neutral source per layer.** The org and personal repositories stay the source. Each keeps one tree: `skills/`, `agents/` with neutral frontmatter, `mcp.json`, `hooks/` with the gate core and its adapters, and `AGENTS.md`. PStack stays a pinned git source.
+1. **Neutral source per layer.** The org and personal repositories stay the source. Each keeps one tree: `skills/`, `agents/` with neutral frontmatter, `mcp.json`, `hooks/` with hook definitions, and `AGENTS.md`. PStack stays a pinned git source.
 2. **One generator in `maxstack`.** It turns each layer into every runtime's format: plugin manifests, Codex TOML agents, OpenCode configuration, and Cursor and Antigravity rules. It runs when the installer applies and writes only into the workspace.
 3. **Generated files are not committed.** Only neutral source is committed. CI fails when the generator's output differs from what the installer would write.
 4. **Three delivery paths.**
@@ -108,19 +108,18 @@ The master template promises the same behavior in every runtime where that is po
 
 ## Constraints that carry over
 
-- Pi runs with no third-party extensions. The org gate and PStack's own Pi extension are the only extensions.
+- Pi runs with no third-party extensions. PStack's own Pi extension is the only extension.
 - Claude subscription credentials are not routed through Pi. Claude stays on Claude Code.
 - Nothing in the workspace config is global. The deathpie workspace is untouched.
-- The access gate decision lives only in `gate.mjs`. Each runtime adapter gathers inputs and applies the answer.
 
 ## Phases
 
 | Phase | Scope | Proof |
 | --- | --- | --- |
 | 0 | Generation of skills and OpenCode MCP, built standalone; instruction composition and the installer wiring still to do. One PStack pin. The duplicate skill trees go. The lifecycle: runtime and layer selection, layer sources and overrides, the ownership record, `update`, `remove`, and `uninstall`. | The generated output for the four installed runtimes matches today's installs, and the install and uninstall round trip leaves the tree unchanged on Linux. |
-| 1 | Agents and hooks conversion for those four runtimes. | The gate denies the same commands as today in each runtime. |
-| 2 | Codex: a `codex` runtime key, a `CODEX_HOME` wrapper, a gate adapter. | A denied command is blocked in a Codex session. |
-| 3 | Cursor and Antigravity: stamping and workspace-root files. | A skill and the gate work in each, quota permitting. |
+| 1 | Agents and hooks conversion for those four runtimes. | Each runtime loads the same agents and hook definitions. |
+| 2 | Codex: a `codex` runtime key, a `CODEX_HOME` wrapper, a hook adapter. | The runtime loads its skills, instructions, and hook definition. |
+| 3 | Cursor and Antigravity: stamping and workspace-root files. | A skill works in each, quota permitting. |
 | 4 | A second workspace. | `mds368` installs from its own layer list. |
 
 Built, standalone: the [layer generator](neutral-layer-generator.md) byte-copies each layer's skills and projects OpenCode MCP for the four installed runtimes, and it refuses nonempty MCP for the others. Its proof is byte equality with the three real layers and a temporary installer overlay. Not built: instruction composition, live runtime discovery, installer wiring, one PStack pin, physical deduplication, and the remaining lifecycle work.

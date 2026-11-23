@@ -23,7 +23,7 @@ const readOnlySettings = (gatedInstances = [], readOnlyInstances = ids) => ({
 });
 const install = (ctx, extra = [], options = {}) => runInstaller(shell, ctx, extra, options);
 
-function addGateHooks(ctx) {
+function addHooks(ctx) {
   const hooks = join(ctx.workspace, 'projects', 'repos', 'org-ai-plugin', 'hooks');
   mkdirSync(join(hooks, 'lib'), { recursive: true });
   writeFileSync(join(hooks, 'pre-tool-use.mjs'), '');
@@ -47,7 +47,7 @@ for (const [label, values] of [
   });
 }
 
-test('the list writes selected layers and a false gate when the gate hook is absent', () => {
+test('the list writes selected layers and a false gate when the hook is absent', () => {
   withWorkspace('gated list without gate', (workspace) => {
     writeWorkspaceSettings(workspace, settings());
     const run = install(workspace);
@@ -291,9 +291,9 @@ test('snapshot staleness alone is informational under strict status', () => {
   });
 });
 
-test('the list marks the gate when the selected layer source has both gate hooks', () => {
+test('the list marks the gate when the selected layer source has both hooks', () => {
   withWorkspace('gated list with gate', (ctx) => {
-    addGateHooks(ctx);
+    addHooks(ctx);
     writeWorkspaceSettings(ctx, settings());
     const run = install(ctx);
     assert.equal(run.status, 0, plainOutput(run));
