@@ -24,11 +24,26 @@ const common = { kind: 'file', sha256: fileHash, layers: ['org-ai-plugin'] };
 
 test('owned record verifier accepts current installer runtime shapes and rejects malformed claims', () => {
   const valid = [
-    { ...common, path: '.codex/config.toml', runtime: 'codex', hookHash: `sha256:${'a'.repeat(64)}` },
+    {
+      ...common,
+      path: '.codex/config.toml',
+      runtime: 'codex',
+      hookHash: `sha256:${'a'.repeat(64)}`,
+    },
     { ...common, path: '.pstack/pstack-t3-instances.json', runtime: 't3-gated-instances' },
     { ...common, path: '.maxstack/workspace-instructions.md', runtime: 'workspace-instructions' },
-    { ...common, path: '.maxstack/copilot-instructions/AGENTS.md', runtime: 'workspace-instructions' },
-    { ...common, path: '.agents/skills/shared-demo', kind: 'dir', runtimes: ['antigravity', 'codex'], sha256: fileHash },
+    {
+      ...common,
+      path: '.maxstack/copilot-instructions/AGENTS.md',
+      runtime: 'workspace-instructions',
+    },
+    {
+      ...common,
+      path: '.agents/skills/shared-demo',
+      kind: 'dir',
+      runtimes: ['antigravity', 'codex'],
+      sha256: fileHash,
+    },
   ];
   assert.deepEqual(check(valid), []);
 

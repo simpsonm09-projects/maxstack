@@ -13,8 +13,15 @@ const DEFAULT_TIMEOUT_MS = 20000;
 const MAX_OUTPUT_BYTES = 8 * 1024 * 1024;
 const MARKER_OVERRIDE = 'project_root_markers=["stack.lock.json"]';
 const DIAGNOSTICS = new Set([
-  'none', 'missing-cli', 'unsupported-shim', 'timeout', 'output-too-large',
-  'launch-error', 'version-check-failed', 'invalid-version', 'marker-mismatch',
+  'none',
+  'missing-cli',
+  'unsupported-shim',
+  'timeout',
+  'output-too-large',
+  'launch-error',
+  'version-check-failed',
+  'invalid-version',
+  'marker-mismatch',
 ]);
 
 export function summarizePromptInput(value) {
@@ -30,7 +37,12 @@ export function summarizePromptInput(value) {
 
 function within(parent, candidate) {
   const pathFromParent = relative(parent, candidate);
-  return pathFromParent !== '' && pathFromParent !== '..' && !pathFromParent.startsWith(`..${sep}`) && !isAbsolute(pathFromParent);
+  return (
+    pathFromParent !== '' &&
+    pathFromParent !== '..' &&
+    !pathFromParent.startsWith(`..${sep}`) &&
+    !isAbsolute(pathFromParent)
+  );
 }
 
 function runProcess(command, args, { cwd, env, timeoutMs }) {
@@ -53,11 +65,22 @@ function runProcess(command, args, { cwd, env, timeoutMs }) {
     }, timeoutMs);
     try {
       const isTestScript = /\.(mjs|js)$/i.test(command);
-      child = spawn(isTestScript ? process.execPath : command, isTestScript ? [command, ...args] : args, {
-        cwd, env, shell: false, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'],
-      });
+      child = spawn(
+        isTestScript ? process.execPath : command,
+        isTestScript ? [command, ...args] : args,
+        {
+          cwd,
+          env,
+          shell: false,
+          windowsHide: true,
+          stdio: ['ignore', 'pipe', 'pipe'],
+        },
+      );
       const collect = (target, chunk) => {
-        if (Buffer.byteLength(stdout) + Buffer.byteLength(stderr) + chunk.length > MAX_OUTPUT_BYTES) {
+        if (
+          Buffer.byteLength(stdout) + Buffer.byteLength(stderr) + chunk.length >
+          MAX_OUTPUT_BYTES
+        ) {
           outputTooLarge = true;
           child.kill();
           return;
@@ -101,7 +124,8 @@ function isolatedEnvironment(fixture, codexHome) {
   const privateHome = join(fixture, 'user-home');
   const appData = join(fixture, 'app-data');
   const localAppData = join(fixture, 'local-app-data');
-  for (const directory of [privateHome, appData, localAppData, join(fixture, 'temp')]) mkdirSync(directory, { recursive: true });
+  for (const directory of [privateHome, appData, localAppData, join(fixture, 'temp')])
+    mkdirSync(directory, { recursive: true });
   env.HOME = privateHome;
   env.USERPROFILE = privateHome;
   env.APPDATA = appData;
@@ -123,7 +147,11 @@ function makeFixture(root, name) {
   mkdirSync(join(nested, '.git', 'refs', 'tags'), { recursive: true });
   mkdirSync(home, { recursive: true });
   writeFileSync(join(nested, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
-  writeFileSync(join(nested, '.git', 'config'), '[core]\n\trepositoryformatversion = 0\n\tbare = false\n', 'utf8');
+  writeFileSync(
+    join(nested, '.git', 'config'),
+    '[core]\n\trepositoryformatversion = 0\n\tbare = false\n',
+    'utf8',
+  );
   writeFileSync(join(fixture, 'workspace', 'stack.lock.json'), '{}\n', 'utf8');
   writeFileSync(join(fixture, 'workspace', 'AGENTS.md'), `${SENTINEL}\n`, 'utf8');
   return { fixture, nested, home };
@@ -163,7 +191,10 @@ function resolveCodex(command) {
     }
     return { command: resolved, error: null };
   } catch (error) {
-    return { command: null, diagnostic: /shim/i.test(error?.message ?? '') ? 'unsupported-shim' : 'missing-cli' };
+    return {
+      command: null,
+      diagnostic: /shim/i.test(error?.message ?? '') ? 'unsupported-shim' : 'missing-cli',
+    };
   }
 }
 
@@ -175,12 +206,20 @@ async function checkResolvedCodex(command, root, timeoutMs) {
     timeoutMs: Math.min(timeoutMs, 10000),
   });
   const versionText = !run.error && !run.timedOut && run.exitCode === 0 ? run.stdout.trim() : '';
-  const versionMatch = versionText.match(/^codex(?:-cli)?\s+(v?\d{1,3}\.\d{1,3}\.\d{1,3}(?:-[0-9A-Za-z.-]+)?)$/i);
+  const versionMatch = versionText.match(
+    /^codex(?:-cli)?\s+(v?\d{1,3}\.\d{1,3}\.\d{1,3}(?:-[0-9A-Za-z.-]+)?)$/i,
+  );
   const cliVersion = versionMatch ? `codex-cli ${versionMatch[1]}` : null;
   if (!cliVersion) return unsupported(versionDiagnostic(run));
 
   const defaultCase = await runCase(command, root, 'default', ['debug', 'prompt-input'], timeoutMs);
-  const markerCase = await runCase(command, root, 'explicit-marker', ['-c', MARKER_OVERRIDE, 'debug', 'prompt-input'], timeoutMs);
+  const markerCase = await runCase(
+    command,
+    root,
+    'explicit-marker',
+    ['-c', MARKER_OVERRIDE, 'debug', 'prompt-input'],
+    timeoutMs,
+  );
   const defaultAbsent = defaultCase.summary?.agentsSentinelPresent === false;
   const markerPresent = markerCase.summary?.agentsSentinelPresent === true;
   const pass = Boolean(defaultAbsent && markerPresent);
@@ -188,7 +227,10 @@ async function checkResolvedCodex(command, root, timeoutMs) {
     status: pass ? 'pass' : 'fail',
     pass,
     cliVersion,
-    proof: { defaultSentinelAbsent: Boolean(defaultAbsent), explicitMarkerSentinelPresent: Boolean(markerPresent) },
+    proof: {
+      defaultSentinelAbsent: Boolean(defaultAbsent),
+      explicitMarkerSentinelPresent: Boolean(markerPresent),
+    },
     diagnostic: pass ? 'none' : 'marker-mismatch',
   };
 }
@@ -206,13 +248,20 @@ function cleanupFixture(base, root) {
   }
 }
 
-export async function runDiscoveryCheck({ codex = 'codex', timeoutMs = DEFAULT_TIMEOUT_MS, tempRoot = tmpdir() } = {}) {
+export async function runDiscoveryCheck({
+  codex = 'codex',
+  timeoutMs = DEFAULT_TIMEOUT_MS,
+  tempRoot = tmpdir(),
+} = {}) {
   const base = resolve(tempRoot);
   const root = mkdtempSync(join(base, 'maxstack-codex-discovery-'));
-  if (!isAbsolute(root) || !within(base, root)) throw new Error('temporary fixture path failed its absolute-root check');
+  if (!isAbsolute(root) || !within(base, root))
+    throw new Error('temporary fixture path failed its absolute-root check');
   try {
     const resolved = resolveCodex(codex);
-    return resolved.diagnostic ? unsupported(resolved.diagnostic) : await checkResolvedCodex(resolved.command, root, timeoutMs);
+    return resolved.diagnostic
+      ? unsupported(resolved.diagnostic)
+      : await checkResolvedCodex(resolved.command, root, timeoutMs);
   } finally {
     cleanupFixture(base, root);
   }
@@ -236,8 +285,13 @@ export function parseArgs(argv) {
     else if (argument === '--timeout-ms') options.timeoutMs = Number(argv[++index]);
     else throw new Error('invalid arguments');
   }
-  if (!options.codex) throw new Error('--codex is required; choose the installed Codex CLI to check');
-  if (!Number.isFinite(options.timeoutMs) || options.timeoutMs < 100 || options.timeoutMs > 120000) {
+  if (!options.codex)
+    throw new Error('--codex is required; choose the installed Codex CLI to check');
+  if (
+    !Number.isFinite(options.timeoutMs) ||
+    options.timeoutMs < 100 ||
+    options.timeoutMs > 120000
+  ) {
     throw new Error('--timeout-ms must be between 100 and 120000');
   }
   return options;
@@ -251,7 +305,9 @@ async function main(argv) {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   main(process.argv.slice(2)).then(
-    (code) => { process.exitCode = code; },
+    (code) => {
+      process.exitCode = code;
+    },
     () => {
       process.stderr.write('invalid arguments or local fixture error\n');
       process.exitCode = 2;

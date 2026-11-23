@@ -26,7 +26,14 @@ function buildDevSetup(ids) {
 }
 
 function buildSkill(rows) {
-  const lines = ['# Service integrations', '', '## Pick the owner', '', '| Job | Owner | Command |', '| --- | --- | --- |'];
+  const lines = [
+    '# Service integrations',
+    '',
+    '## Pick the owner',
+    '',
+    '| Job | Owner | Command |',
+    '| --- | --- | --- |',
+  ];
   for (const row of rows) lines.push(`| ${row.job} | ${row.owner} | ${row.command} |`);
   return `${lines.join('\n')}\n`;
 }
@@ -121,16 +128,23 @@ function findWorkspaceRoot(start) {
 }
 
 const workspaceRoot = findWorkspaceRoot(repoRoot);
-const devSetupFile = workspaceRoot && join(workspaceRoot, 'projects', 'repos', 'dev-setup', 'tools.yaml');
+const devSetupFile =
+  workspaceRoot && join(workspaceRoot, 'projects', 'repos', 'dev-setup', 'tools.yaml');
 const orgPluginFile =
   workspaceRoot && join(workspaceRoot, 'projects', 'repos', 'org-ai-plugin', registryRel);
-const hasSiblings = Boolean(devSetupFile && orgPluginFile && existsSync(devSetupFile) && existsSync(orgPluginFile));
+const hasSiblings = Boolean(
+  devSetupFile && orgPluginFile && existsSync(devSetupFile) && existsSync(orgPluginFile),
+);
 
 test(
   'the current workspace passes',
   { skip: hasSiblings ? false : 'the sibling checkouts are not present' },
   () => {
-    const run = spawnSync(process.execPath, [script], { windowsHide: true, encoding: 'utf8', cwd: repoRoot });
+    const run = spawnSync(process.execPath, [script], {
+      windowsHide: true,
+      encoding: 'utf8',
+      cwd: repoRoot,
+    });
     assert.equal(run.status, 0, `expected a zero exit\n${run.stdout}\n${run.stderr}`);
     assert.match(run.stdout, /PASS: the agent tool set covers every service owner/);
   },

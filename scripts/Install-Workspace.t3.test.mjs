@@ -3,12 +3,24 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { lockPath, plainOutput, readJson, runInstaller, runStatus, shell, withWorkspace, writeWorkspaceSettings } from './lib/installer-test-kit.mjs';
+import {
+  lockPath,
+  plainOutput,
+  readJson,
+  runInstaller,
+  runStatus,
+  shell,
+  withWorkspace,
+  writeWorkspaceSettings,
+} from './lib/installer-test-kit.mjs';
 
 const ids = ['instance_one', 'instance-two'];
 const instancesPath = (ctx) => join(ctx.workspace, '.pstack', 'pstack-t3-instances.json');
 const settings = (gatedInstances = ids) => ({ version: 1, t3: { gatedInstances } });
-const readOnlySettings = (gatedInstances = [], readOnlyInstances = ids) => ({ version: 1, t3: { gatedInstances, readOnlyInstances } });
+const readOnlySettings = (gatedInstances = [], readOnlyInstances = ids) => ({
+  version: 1,
+  t3: { gatedInstances, readOnlyInstances },
+});
 const install = (ctx, extra = [], options = {}) => runInstaller(shell, ctx, extra, options);
 
 function addGateHooks(ctx) {
@@ -69,7 +81,10 @@ test('an explicit source wins over the environment and writes only the sanitized
     const source = join(ctx.base, 'selected-settings.json');
     const ignored = join(ctx.base, 'environment-settings.json');
     const canary = `private-${String.fromCharCode(116, 111, 107, 101, 110)}-value`;
-    writeFileSync(source, JSON.stringify({ defaultAutoPull: true, github: { token: canary }, unknownSetting: canary }));
+    writeFileSync(
+      source,
+      JSON.stringify({ defaultAutoPull: true, github: { token: canary }, unknownSetting: canary }),
+    );
     writeFileSync(ignored, JSON.stringify({ defaultAutoPull: false }));
     const env = { ...process.env, MAXSTACK_T3_SETTINGS: ignored };
     const run = install(ctx, ['-T3Settings', source], { env });
@@ -80,7 +95,12 @@ test('an explicit source wins over the environment and writes only the sanitized
     assert.equal(snapshot.defaultAutoPull, true);
     assert.equal(Object.hasOwn(snapshot, 'github'), false);
     assert.equal(Object.hasOwn(snapshot, 'unknownSetting'), false);
-    assert.equal(readJson(lockPath(ctx)).owned.some((item) => item.path === '.maxstack/t3/settings.snapshot.json'), true);
+    assert.equal(
+      readJson(lockPath(ctx)).owned.some(
+        (item) => item.path === '.maxstack/t3/settings.snapshot.json',
+      ),
+      true,
+    );
   });
 });
 
@@ -95,9 +115,20 @@ test('an existing unowned snapshot is kept and not claimed', () => {
     const applied = install(ctx, ['-T3Settings', source]);
     assert.equal(applied.status, 0, plainOutput(applied));
     assert.equal(readFileSync(snapshotPath, 'utf8'), original);
-    assert.match(plainOutput(applied), /Kept \.maxstack\/t3\/settings\.snapshot\.json: it exists and was not written by maxstack/);
-    assert.equal(readJson(lockPath(ctx)).owned.some((item) => item.path === '.maxstack/t3/settings.snapshot.json'), false);
-    const status = install(ctx, ['-Status', '-Strict'], { apply: false, env: { ...process.env, MAXSTACK_T3_SETTINGS: source } });
+    assert.match(
+      plainOutput(applied),
+      /Kept \.maxstack\/t3\/settings\.snapshot\.json: it exists and was not written by maxstack/,
+    );
+    assert.equal(
+      readJson(lockPath(ctx)).owned.some(
+        (item) => item.path === '.maxstack/t3/settings.snapshot.json',
+      ),
+      false,
+    );
+    const status = install(ctx, ['-Status', '-Strict'], {
+      apply: false,
+      env: { ...process.env, MAXSTACK_T3_SETTINGS: source },
+    });
     assert.equal(status.status, 1, plainOutput(status));
     assert.match(status.stdout, /untracked\s+\.maxstack\/t3\/settings\.snapshot\.json/);
   });
@@ -109,16 +140,23 @@ test('apply keeps a modified owned snapshot and strict status reports it as modi
     const snapshotPath = join(ctx.workspace, '.maxstack', 't3', 'settings.snapshot.json');
     writeFileSync(source, JSON.stringify({ defaultAutoPull: false }));
     assert.equal(install(ctx, ['-T3Settings', source]).status, 0);
-    const priorRecord = readJson(lockPath(ctx)).owned.find((item) => item.path === '.maxstack/t3/settings.snapshot.json');
+    const priorRecord = readJson(lockPath(ctx)).owned.find(
+      (item) => item.path === '.maxstack/t3/settings.snapshot.json',
+    );
     const userContent = '{"keptByUser":true}\n';
     writeFileSync(snapshotPath, userContent);
     writeFileSync(source, JSON.stringify({ defaultAutoPull: true }));
     const applied = install(ctx, ['-T3Settings', source]);
     assert.equal(applied.status, 0, plainOutput(applied));
     assert.equal(readFileSync(snapshotPath, 'utf8'), userContent);
-    const retainedRecord = readJson(lockPath(ctx)).owned.find((item) => item.path === '.maxstack/t3/settings.snapshot.json');
+    const retainedRecord = readJson(lockPath(ctx)).owned.find(
+      (item) => item.path === '.maxstack/t3/settings.snapshot.json',
+    );
     assert.equal(retainedRecord.sha256, priorRecord.sha256);
-    const status = install(ctx, ['-Status', '-Strict'], { apply: false, env: { ...process.env, MAXSTACK_T3_SETTINGS: source } });
+    const status = install(ctx, ['-Status', '-Strict'], {
+      apply: false,
+      env: { ...process.env, MAXSTACK_T3_SETTINGS: source },
+    });
     assert.equal(status.status, 1, plainOutput(status));
     assert.match(status.stdout, /modified\s+\.maxstack\/t3\/settings\.snapshot\.json/);
   });
@@ -130,14 +168,21 @@ test('an unchanged owned snapshot updates when the selected source changes', () 
     const snapshotPath = join(ctx.workspace, '.maxstack', 't3', 'settings.snapshot.json');
     writeFileSync(source, JSON.stringify({ defaultAutoPull: false }));
     assert.equal(install(ctx, ['-T3Settings', source]).status, 0);
-    const priorRecord = readJson(lockPath(ctx)).owned.find((item) => item.path === '.maxstack/t3/settings.snapshot.json');
+    const priorRecord = readJson(lockPath(ctx)).owned.find(
+      (item) => item.path === '.maxstack/t3/settings.snapshot.json',
+    );
     writeFileSync(source, JSON.stringify({ defaultAutoPull: true }));
     const applied = install(ctx, ['-T3Settings', source]);
     assert.equal(applied.status, 0, plainOutput(applied));
     assert.deepEqual(readJson(snapshotPath), { defaultAutoPull: true });
-    const nextRecord = readJson(lockPath(ctx)).owned.find((item) => item.path === '.maxstack/t3/settings.snapshot.json');
+    const nextRecord = readJson(lockPath(ctx)).owned.find(
+      (item) => item.path === '.maxstack/t3/settings.snapshot.json',
+    );
     assert.notEqual(nextRecord.sha256, priorRecord.sha256);
-    assert.match(plainOutput(applied), /Snapshot: \.maxstack\/t3\/settings\.snapshot\.json \(stale: would change\)/);
+    assert.match(
+      plainOutput(applied),
+      /Snapshot: \.maxstack\/t3\/settings\.snapshot\.json \(stale: would change\)/,
+    );
   });
 });
 
@@ -210,9 +255,26 @@ test('snapshot staleness alone is informational under strict status', () => {
       defaultAutoPull,
       defaultThreadEnvMode: 'worktree',
       providerInstances: {
-        [`claude${workspaceSlug}`]: { driver: 'claudeAgent', enabled: true, config: { binaryPath: 'claude', launchArgs: `--plugin-dir ${workspacePluginDir}` } },
-        [`copilot${workspaceSlug}`]: { driver: 'acpRegistry', enabled: true, config: { source: 'registry', agentId: 'github-copilot-cli', distribution: 'auto', commandPath: copilotWrapper } },
-        [`pi${workspaceSlug}`]: { driver: 'pi', enabled: true, config: { binaryPath: piWrapper, launchArgs: '' } },
+        [`claude${workspaceSlug}`]: {
+          driver: 'claudeAgent',
+          enabled: true,
+          config: { binaryPath: 'claude', launchArgs: `--plugin-dir ${workspacePluginDir}` },
+        },
+        [`copilot${workspaceSlug}`]: {
+          driver: 'acpRegistry',
+          enabled: true,
+          config: {
+            source: 'registry',
+            agentId: 'github-copilot-cli',
+            distribution: 'auto',
+            commandPath: copilotWrapper,
+          },
+        },
+        [`pi${workspaceSlug}`]: {
+          driver: 'pi',
+          enabled: true,
+          config: { binaryPath: piWrapper, launchArgs: '' },
+        },
       },
     });
     writeFileSync(source, JSON.stringify(settings(false)));
@@ -222,7 +284,10 @@ test('snapshot staleness alone is informational under strict status', () => {
     const env = { ...process.env, MAXSTACK_T3_SETTINGS: source };
     const strict = install(ctx, ['-Status', '-Strict'], { apply: false, env });
     assert.equal(strict.status, 0, plainOutput(strict));
-    assert.match(strict.stdout, /Snapshot: \.maxstack\/t3\/settings\.snapshot\.json \(stale: would change\)/);
+    assert.match(
+      strict.stdout,
+      /Snapshot: \.maxstack\/t3\/settings\.snapshot\.json \(stale: would change\)/,
+    );
   });
 });
 
@@ -275,7 +340,9 @@ test('a read-only generated list is owned and strict status is clean', () => {
     writeWorkspaceSettings(ctx, readOnlySettings([], ['read_only_one']));
     const applied = install(ctx);
     assert.equal(applied.status, 0, plainOutput(applied));
-    const record = readJson(lockPath(ctx)).owned.find((item) => item.path === '.pstack/pstack-t3-instances.json');
+    const record = readJson(lockPath(ctx)).owned.find(
+      (item) => item.path === '.pstack/pstack-t3-instances.json',
+    );
     assert.ok(record);
     const status = runStatus(ctx, ['-Strict']);
     assert.equal(status.status, 0, plainOutput(status));
@@ -288,7 +355,9 @@ test('a generated list is owned and strict status is clean', () => {
     writeWorkspaceSettings(ctx, settings());
     const applied = install(ctx);
     assert.equal(applied.status, 0, plainOutput(applied));
-    const record = readJson(lockPath(ctx)).owned.find((item) => item.path === '.pstack/pstack-t3-instances.json');
+    const record = readJson(lockPath(ctx)).owned.find(
+      (item) => item.path === '.pstack/pstack-t3-instances.json',
+    );
     assert.ok(record);
     assert.ok(readJson(lockPath(ctx)).createdDirs.includes('.pstack'));
     const status = runStatus(ctx, ['-Strict']);
@@ -334,8 +403,16 @@ test('an existing unowned list is kept without being overwritten', () => {
     const applied = install(ctx);
     assert.equal(applied.status, 0, plainOutput(applied));
     assert.equal(readFileSync(path, 'utf8'), original);
-    assert.match(plainOutput(applied), /Kept \.pstack\/pstack-t3-instances\.json: it exists and was not written by maxstack/);
-    assert.equal(readJson(lockPath(ctx)).owned.some((item) => item.path === '.pstack/pstack-t3-instances.json'), false);
+    assert.match(
+      plainOutput(applied),
+      /Kept \.pstack\/pstack-t3-instances\.json: it exists and was not written by maxstack/,
+    );
+    assert.equal(
+      readJson(lockPath(ctx)).owned.some(
+        (item) => item.path === '.pstack/pstack-t3-instances.json',
+      ),
+      false,
+    );
   });
 });
 
@@ -344,7 +421,10 @@ test('audit reports the gated list and writes nothing', () => {
     writeWorkspaceSettings(ctx, settings());
     const audit = install(ctx, [], { apply: false });
     assert.equal(audit.status, 0, plainOutput(audit));
-    assert.match(audit.stdout, /T3 instance list: would write or keep \.pstack\/pstack-t3-instances\.json \(missing\)/);
+    assert.match(
+      audit.stdout,
+      /T3 instance list: would write or keep \.pstack\/pstack-t3-instances\.json \(missing\)/,
+    );
     assert.equal(existsSync(instancesPath(ctx)), false);
     assert.equal(existsSync(lockPath(ctx)), false);
   });

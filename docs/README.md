@@ -30,3 +30,7 @@ Index for this repository.
 - [Non-Claude instruction collision](release-notes/2026-10-23-non-claude-claude-instructions-collision.md) records that a user `CLAUDE.md` does not block generated `AGENTS.md` when Claude is not selected.
 - [Skill metadata fixture](release-notes/2026-10-22-skill-metadata-fixture.md) records the bounded byte-preservation fixture and its documentation contract.
 - [Codex discovery check](release-notes/2026-10-22-codex-discovery-check.md) records the portable, model-free marker acceptance tool.
+
+## Exceptions
+
+- [Exceptions](exceptions.md) records the standard rules this repository cannot meet yet.

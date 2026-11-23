@@ -1,9 +1,10 @@
 # maxstack working agreements
 
 - Keep secrets, tokens, account state, and session databases out of this repository.
+- Bun 1.4.5 formats and lints the `.mjs` scripts. The `node:test` suite, the PowerShell installer, and the Python manifest tooling stay on their runtimes until the C7.3/C7.4 migration recorded in `docs/exceptions.md`.
 - `maxstack` owns AI composition. `dev-setup` owns the machine and the human tool set, including `tools.yaml` and the `with-secrets` and Agent Vault wrappers. `docs/relationship.md` names how the repositories and the ordered plugin layers fit together.
 - `maxstack` coordinates AI tooling but does not own the plugin. The PStack plugin lives in the `plugins/pstack` folder of the fork `simpsonm09/pstack-max`, branch `main`. Edit it there, never the installed copies under `.opencode`, `.claude`, or `.maxstack`.
-- The pstack pin is one commit, written in two places that must agree: the pstack layer's `source` in `layers.json` and `pstack.lock.json`. Change both in the same commit, then run `python scripts/verify-manifests.py`.
+- The pstack pin is one commit, written in two places that must agree: the pstack layer's `source` in `layers.json` and `pstack.lock.json`. Change both in the same commit, then run `just validate`.
 - PStack is scoped to `<workspace>` through that workspace's `opencode.jsonc`, `.opencode`, `.claude`, and `.maxstack` directories. Do not install it globally.
 - maxstack sets no model. Do not add a `model` or `small_model` key to the workspace config, or a `model:` line to an agent profile. The user picks the model in the harness: the T3 Code model picker, or their own OpenCode, Claude Code, or Copilot settings. `Install-Workspace.ps1` regenerates the workspace config without a model and strips a `model:` line from the frontmatter of each profile it installs.
 - Own the workspace MCP servers through the ordered layers in `layers.json`, and document them in `docs/mcp.md`. Shared servers live in `org-ai-plugin`; personal servers live in `personal-ai-plugin`. `Install-Workspace.ps1` merges the layer fragments into `workspace/opencode.jsonc`. Use the V2 `mcp.servers` shape and keep a server off with `disabled: true`; do not use the V1 shape or an `enabled` field.

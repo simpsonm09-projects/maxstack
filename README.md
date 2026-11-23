@@ -40,21 +40,23 @@ After an install, restart the running OpenCode server before using a new T3 sess
 
 | Command | Does |
 | --- | --- |
-| `just lint` | Runs the linters over changed files. |
-| `just lint-full` | Runs the linters over every tracked file. |
+| `just install` | Installs the pinned tools with `mise install`. |
+| `just fmt` / `just fmt-check` | Formats the `.mjs` scripts with Bun, or checks the formatting. |
+| `just lint` | Lints the JavaScript with oxlint through Bun. |
 | `just aislop` | Runs the AI-slop gate. |
 | `just security` | Scans the filesystem with Trivy. |
 | `just validate` | Validates the workspace manifests the installer consumes. |
 | `just validate-online` | Also checks the pstack pin against GitHub. Needs `git` and network. |
-| `just install` | Installs the pinned tools with `mise install`. |
-| `just check` | Runs lint and validate. |
 | `just test` | Runs the manifest verifier and the Node tests that need no Windows. |
-| `just test-node` | Runs the full node test suite under `scripts/`. Needs Node 21+, and PowerShell 7 and git for the installer tests. CI runs four shards on Windows and aggregates them into the required `test-node` check. |
+| `just test-node` | Runs the full node test suite under `scripts/`. Needs Node and, for the installer tests, PowerShell 7 and git. |
+| `just check` | Runs everything CI requires locally: format, lint, and test. |
 | `just verify` | Runs lint, test, and the AI-slop gate. |
+| `just agent-files` | Checks the `.agents/skills` tree and its `.claude/skills` links. |
+| `just hooks` | Installs the guarded pre-push hook. |
 
 ## Documentation
 
-Read [`docs/README.md`](docs/README.md) for the layout, the model rule, the MCP servers, and the installer.
+Read [`docs/README.md`](docs/README.md) for the layout, the model rule, the MCP servers, and the installer. [`docs/exceptions.md`](docs/exceptions.md) records the standard rules this repository cannot meet yet.
 
 ## License
 

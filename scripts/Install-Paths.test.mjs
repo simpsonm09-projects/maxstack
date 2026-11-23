@@ -5,12 +5,18 @@ import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const shell = spawnSync('pwsh', ['-NoProfile', '-Command', 'exit 0'], { windowsHide: true }).status === 0 ? 'pwsh' : null;
+const shell =
+  spawnSync('pwsh', ['-NoProfile', '-Command', 'exit 0'], { windowsHide: true }).status === 0
+    ? 'pwsh'
+    : null;
 
-test('platform path helpers cover roots, separators, containment, and case rules', { skip: !shell }, () => {
-  const helper = join(root, 'scripts', 'Install-Paths.ps1').replaceAll("'", "''");
-  const ordinal = join(root, 'scripts', 'Install-Ordinal.ps1').replaceAll("'", "''");
-  const script = `. '${ordinal}'; . '${helper}'; $cases = @(
+test(
+  'platform path helpers cover roots, separators, containment, and case rules',
+  { skip: !shell },
+  () => {
+    const helper = join(root, 'scripts', 'Install-Paths.ps1').replaceAll("'", "''");
+    const ordinal = join(root, 'scripts', 'Install-Ordinal.ps1').replaceAll("'", "''");
+    const script = `. '${ordinal}'; . '${helper}'; $cases = @(
     @{ name = 'Windows drive paths are absolute'; passed = (Test-MaxstackAbsolutePath 'C:\\work\\repo' Windows) },
     @{ name = 'Windows UNC paths are absolute'; passed = (Test-MaxstackAbsolutePath '\\\\server\\share\\repo' Windows) },
     @{ name = 'POSIX paths are absolute for macOS'; passed = (Test-MaxstackAbsolutePath '/Users/name/dev/x' macOS) },
@@ -30,14 +36,25 @@ test('platform path helpers cover roots, separators, containment, and case rules
     @{ name = 'macOS path equality preserves case'; passed = (-not (Test-MaxstackPathEqual '/A/b' '/a/b' macOS)) },
     @{ name = 'Linux path equality matches identical paths'; passed = (Test-MaxstackPathEqual '/a/b' '/a/b' Linux) }
   ); $failed = @($cases | Where-Object { -not $_.passed }); if ($failed.Count) { throw ('path helper cases failed: ' + (($failed | ForEach-Object { $_.name }) -join ', ')) }`;
-  const result = spawnSync(shell, ['-NoProfile', '-NonInteractive', '-Command', script], { windowsHide: true, encoding: 'utf8' });
-  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
-});
+    const result = spawnSync(shell, ['-NoProfile', '-NonInteractive', '-Command', script], {
+      windowsHide: true,
+      encoding: 'utf8',
+    });
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+  },
+);
 
-test('OpenCode permissions use POSIX workspace paths and omit WSL resources', { skip: !shell }, () => {
-  const helper = join(root, 'scripts', 'Install-Paths.ps1').replaceAll("'", "''");
-  const ordinal = join(root, 'scripts', 'Install-Ordinal.ps1').replaceAll("'", "''");
-  const script = `. '${ordinal}'; . '${helper}'; $permissions = @([pscustomobject]@{resource='__MAXSTACK_WORKSPACE__/.opencode/*'}, [pscustomobject]@{resource='__MAXSTACK_WORKSPACE_WSL__/.opencode/*'}); $result = @(Resolve-MaxstackOpenCodePermissions -Permissions $permissions -Workspace '/Users/name/dev/workspace' -Platform 'macOS'); if ($result.Count -ne 1 -or $result[0].resource -cne '/Users/name/dev/workspace/.opencode/*') { throw 'POSIX OpenCode permission rendering was incorrect' }; $windowsPermissions = @([pscustomobject]@{resource='__MAXSTACK_WORKSPACE__/.opencode/*'}, [pscustomobject]@{resource='__MAXSTACK_WORKSPACE_WSL__/.opencode/*'}); $windows = @(Resolve-MaxstackOpenCodePermissions -Permissions $windowsPermissions -Workspace 'C:\\Users\\name\\workspace' -Platform 'Windows'); if ($windows.Count -ne 2 -or $windows[1].resource -cne '/mnt/c/Users/name/workspace/.opencode/*') { throw 'Windows OpenCode permission rendering changed' }`;
-  const result = spawnSync(shell, ['-NoProfile', '-NonInteractive', '-Command', script], { windowsHide: true, encoding: 'utf8' });
-  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
-});
+test(
+  'OpenCode permissions use POSIX workspace paths and omit WSL resources',
+  { skip: !shell },
+  () => {
+    const helper = join(root, 'scripts', 'Install-Paths.ps1').replaceAll("'", "''");
+    const ordinal = join(root, 'scripts', 'Install-Ordinal.ps1').replaceAll("'", "''");
+    const script = `. '${ordinal}'; . '${helper}'; $permissions = @([pscustomobject]@{resource='__MAXSTACK_WORKSPACE__/.opencode/*'}, [pscustomobject]@{resource='__MAXSTACK_WORKSPACE_WSL__/.opencode/*'}); $result = @(Resolve-MaxstackOpenCodePermissions -Permissions $permissions -Workspace '/Users/name/dev/workspace' -Platform 'macOS'); if ($result.Count -ne 1 -or $result[0].resource -cne '/Users/name/dev/workspace/.opencode/*') { throw 'POSIX OpenCode permission rendering was incorrect' }; $windowsPermissions = @([pscustomobject]@{resource='__MAXSTACK_WORKSPACE__/.opencode/*'}, [pscustomobject]@{resource='__MAXSTACK_WORKSPACE_WSL__/.opencode/*'}); $windows = @(Resolve-MaxstackOpenCodePermissions -Permissions $windowsPermissions -Workspace 'C:\\Users\\name\\workspace' -Platform 'Windows'); if ($windows.Count -ne 2 -or $windows[1].resource -cne '/mnt/c/Users/name/workspace/.opencode/*') { throw 'Windows OpenCode permission rendering changed' }`;
+    const result = spawnSync(shell, ['-NoProfile', '-NonInteractive', '-Command', script], {
+      windowsHide: true,
+      encoding: 'utf8',
+    });
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+  },
+);

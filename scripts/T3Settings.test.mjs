@@ -1,7 +1,15 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import {
+  copyFileSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -21,7 +29,12 @@ function runReportWithHelper(file, workspace, helperPath, stop = false, preamble
   const env = { ...process.env };
   delete env.MAXSTACK_T3_SETTINGS;
   delete env.T3CODE_HOME;
-  return spawnSync(shell, ['-NoProfile', '-Command', command], { cwd: root, encoding: 'utf8', windowsHide: true, env });
+  return spawnSync(shell, ['-NoProfile', '-Command', command], {
+    cwd: root,
+    encoding: 'utf8',
+    windowsHide: true,
+    env,
+  });
 }
 
 test('report classifies a synthetic T3 file without copying excluded values', () => {
@@ -32,7 +45,16 @@ test('report classifies a synthetic T3 file without copying excluded values', ()
     const secret = ['fixture', 'credential', 'canary', '7129'].join('_');
     const unknownValue = ['fixture', 'unknown', 'canary', '3681'].join('_');
     const sensitiveKey = `apiKey${'a'.repeat(24)}`;
-    writeFileSync(input, JSON.stringify({ defaultAutoPull: true, github: secret, sidebarLayout: unknownValue, [sensitiveKey]: unknownValue, providerInstances: {} }));
+    writeFileSync(
+      input,
+      JSON.stringify({
+        defaultAutoPull: true,
+        github: secret,
+        sidebarLayout: unknownValue,
+        [sensitiveKey]: unknownValue,
+        providerInstances: {},
+      }),
+    );
     const result = runReport(input, workspace);
     assert.equal(result.status, 0, result.stderr);
     assert.doesNotMatch(result.stdout + result.stderr, new RegExp(`${secret}|${unknownValue}`));
@@ -59,18 +81,32 @@ test('runtime policy controls persisted fields and exact top keys reject case va
     mkdirSync(workspace);
     copyFileSync(helper, join(scripts, 'Install-T3Settings.ps1'));
     const policy = JSON.parse(readFileSync(join(root, 't3', 'allowlist.json'), 'utf8'));
-    policy.drivers.claudeAgent.allowed = policy.drivers.claudeAgent.allowed.filter((key) => key !== 'launchArgs');
+    policy.drivers.claudeAgent.allowed = policy.drivers.claudeAgent.allowed.filter(
+      (key) => key !== 'launchArgs',
+    );
     writeFileSync(join(t3, 'allowlist.json'), JSON.stringify(policy));
     copyFileSync(join(root, 't3', 'defaults.json'), join(t3, 'defaults.json'));
-    writeFileSync(input, JSON.stringify({ DefaultAutoPull: true, providerInstances: {
-      claudeWorkspace: { driver: 'claudeAgent', config: { binaryPath: 'claude', launchArgs: '', LaunchArgs: 'private case variant' } },
-    } }));
+    writeFileSync(
+      input,
+      JSON.stringify({
+        DefaultAutoPull: true,
+        providerInstances: {
+          claudeWorkspace: {
+            driver: 'claudeAgent',
+            config: { binaryPath: 'claude', launchArgs: '', LaunchArgs: 'private case variant' },
+          },
+        },
+      }),
+    );
     const result = runReportWithHelper(input, workspace, join(scripts, 'Install-T3Settings.ps1'));
     assert.equal(result.status, 0, result.stderr);
     assert.equal(result.stderr, '');
     const report = JSON.parse(result.stdout);
     assert.equal(report.snapshot.DefaultAutoPull, undefined);
-    assert.equal(report.snapshot.providerInstances['claude{Workspace}'].config.launchArgs, undefined);
+    assert.equal(
+      report.snapshot.providerInstances['claude{Workspace}'].config.launchArgs,
+      undefined,
+    );
     assert.ok(report.unknownKeys.includes('DefaultAutoPull'));
     assert.ok(report.unknownKeys.includes('providerInstances.claude{Workspace}.config.launchArgs'));
     assert.ok(report.unknownKeys.includes('providerInstances.claude{Workspace}.config.LaunchArgs'));
@@ -87,13 +123,30 @@ test('unknown driver config and environment fields are counted without preservin
     const workspace = join(dir, 'workspace');
     mkdirSync(workspace);
     const secret = ['fixture', 'hidden', 'canary', '4792'].join('_');
-    writeFileSync(input, JSON.stringify({ providerInstances: {
-      'private-instance-label': { driver: 'fork-driver', enabled: true, environment: { 'PRIVATE_VAR': secret }, config: { 'authToken': secret, custom: secret } },
-      'public-agent-name': { driver: 'claudeAgent', enabled: true, config: { binaryPath: 'claude', launchArgs: '' } },
-    } }));
+    writeFileSync(
+      input,
+      JSON.stringify({
+        providerInstances: {
+          'private-instance-label': {
+            driver: 'fork-driver',
+            enabled: true,
+            environment: { PRIVATE_VAR: secret },
+            config: { authToken: secret, custom: secret },
+          },
+          'public-agent-name': {
+            driver: 'claudeAgent',
+            enabled: true,
+            config: { binaryPath: 'claude', launchArgs: '' },
+          },
+        },
+      }),
+    );
     const result = runReport(input, workspace);
     assert.equal(result.status, 0, result.stderr);
-    assert.doesNotMatch(result.stdout + result.stderr, new RegExp(`${secret}|private-instance-label|public-agent-name|PRIVATE_VAR|authToken`));
+    assert.doesNotMatch(
+      result.stdout + result.stderr,
+      new RegExp(`${secret}|private-instance-label|public-agent-name|PRIVATE_VAR|authToken`),
+    );
     const report = JSON.parse(result.stdout);
     assert.equal(report.counts.environment, 1);
     assert.equal(report.snapshot.providerInstances.mapextra1.driver, undefined);
@@ -113,13 +166,28 @@ test('allowlisted wrong types and unapproved arguments are omitted and strict', 
     const workspace = join(dir, 'workspace');
     mkdirSync(workspace);
     const bait = ['fixture', 'free', 'text', 'canary', '8091'].join('_');
-    writeFileSync(input, JSON.stringify({ defaultAutoPull: bait, providerInstances: { claudeWork: { driver: 'claudeAgent', enabled: true, config: { binaryPath: 'claude', launchArgs: `--plugin-dir ${bait}` } } } }));
+    writeFileSync(
+      input,
+      JSON.stringify({
+        defaultAutoPull: bait,
+        providerInstances: {
+          claudeWork: {
+            driver: 'claudeAgent',
+            enabled: true,
+            config: { binaryPath: 'claude', launchArgs: `--plugin-dir ${bait}` },
+          },
+        },
+      }),
+    );
     const result = runReport(input, workspace);
     assert.equal(result.status, 0, result.stderr);
     assert.doesNotMatch(result.stdout + result.stderr, new RegExp(bait));
     const report = JSON.parse(result.stdout);
     assert.equal(report.snapshot.defaultAutoPull, undefined);
-    assert.equal(report.drift.find((entry) => entry.id === 'defaultAutoPull').state, 'unverifiable');
+    assert.equal(
+      report.drift.find((entry) => entry.id === 'defaultAutoPull').state,
+      'unverifiable',
+    );
     assert.match(JSON.stringify(report.snapshot), /\{args: 2 tokens\}/);
     assert.ok(report.strictFailures.includes('unverifiable'));
   } finally {
@@ -135,7 +203,19 @@ test('path values normalize only reviewed workspace wrapper paths', () => {
     mkdirSync(workspace);
     const wrapper = join(workspace, '.maxstack', 'bin', 'copilot.cmd');
     const outside = join(dir, 'outside', 'private.exe');
-    writeFileSync(input, JSON.stringify({ providerInstances: { claudeWork: { driver: 'claudeAgent', enabled: true, config: { binaryPath: wrapper, launchArgs: '' } }, piWork: { driver: 'pi', enabled: true, config: { binaryPath: outside, launchArgs: '' } } } }));
+    writeFileSync(
+      input,
+      JSON.stringify({
+        providerInstances: {
+          claudeWork: {
+            driver: 'claudeAgent',
+            enabled: true,
+            config: { binaryPath: wrapper, launchArgs: '' },
+          },
+          piWork: { driver: 'pi', enabled: true, config: { binaryPath: outside, launchArgs: '' } },
+        },
+      }),
+    );
     const result = runReport(input, workspace);
     assert.equal(result.status, 0, result.stderr);
     const report = JSON.parse(result.stdout);
@@ -165,7 +245,10 @@ test('strict parser rejects duplicates, invalid UTF-8, deep input, and oversized
       const result = runReport(input, workspace);
       assert.equal(result.status, 0, `${name}: ${result.stderr}`);
       const report = JSON.parse(result.stdout);
-      assert.ok(['malformed', 'unreadable'].includes(report.sourceState), `${name}: ${report.sourceState}`);
+      assert.ok(
+        ['malformed', 'unreadable'].includes(report.sourceState),
+        `${name}: ${report.sourceState}`,
+      );
       assert.ok(report.strictFailures.includes('malformedSource'));
       assert.doesNotMatch(result.stdout + result.stderr, /\xff|line \d+|exception/i);
     }
@@ -201,7 +284,12 @@ test('UTF-8 BOM is accepted and invalid enum and retention values are rejected',
     const input = join(dir, 'settings.json');
     const workspace = join(dir, 'workspace');
     mkdirSync(workspace);
-    const text = JSON.stringify({ defaultAutoPull: true, responseStreamingMode: 'sentence', defaultRuntimeMode: 'web', storageCleanup: { worktreeAfterDays: 0, worktreeOnMerge: false, unexpected: true } });
+    const text = JSON.stringify({
+      defaultAutoPull: true,
+      responseStreamingMode: 'sentence',
+      defaultRuntimeMode: 'web',
+      storageCleanup: { worktreeAfterDays: 0, worktreeOnMerge: false, unexpected: true },
+    });
     writeFileSync(input, Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from(text)]));
     const result = runReport(input, workspace);
     assert.equal(result.status, 0, result.stderr);
@@ -223,23 +311,78 @@ test('all known drivers keep only their reviewed envelope and config fields', ()
     const workspace = join(dir, 'workspace');
     mkdirSync(workspace);
     const map = {
-      claudeTest: { driver: 'claudeAgent', enabled: true, displayName: 'private label', accentColor: 'private color', config: { binaryPath: 'claude', launchArgs: '', homePath: 'private home', customModels: ['private model'], enabled: false } },
-      codexTest: { driver: 'codex', enabled: false, config: { binaryPath: 'codex', launchArgs: '', shadowHomePath: 'private home', enabled: true } },
+      claudeTest: {
+        driver: 'claudeAgent',
+        enabled: true,
+        displayName: 'private label',
+        accentColor: 'private color',
+        config: {
+          binaryPath: 'claude',
+          launchArgs: '',
+          homePath: 'private home',
+          customModels: ['private model'],
+          enabled: false,
+        },
+      },
+      codexTest: {
+        driver: 'codex',
+        enabled: false,
+        config: {
+          binaryPath: 'codex',
+          launchArgs: '',
+          shadowHomePath: 'private home',
+          enabled: true,
+        },
+      },
       piTest: { driver: 'pi', config: { binaryPath: 'pi', launchArgs: '' } },
-      opencodeTest: { driver: 'opencode', config: { binaryPath: 'opencode', serverUrl: 'private host', serverPassword: 'private password' } },
-      antigravityTest: { driver: 'antigravity', config: { binaryPath: 'antigravity', authMethod: 'private account' } },
-      acpTest: { driver: 'acpRegistry', config: { source: 'registry', agentId: 'github-copilot-cli', distribution: 'auto', commandPath: 'copilot', commandArgs: ['--plugin-dir', join(workspace, '.claude', 'plugins')] } },
+      opencodeTest: {
+        driver: 'opencode',
+        config: {
+          binaryPath: 'opencode',
+          serverUrl: 'private host',
+          serverPassword: 'private password',
+        },
+      },
+      antigravityTest: {
+        driver: 'antigravity',
+        config: { binaryPath: 'antigravity', authMethod: 'private account' },
+      },
+      acpTest: {
+        driver: 'acpRegistry',
+        config: {
+          source: 'registry',
+          agentId: 'github-copilot-cli',
+          distribution: 'auto',
+          commandPath: 'copilot',
+          commandArgs: ['--plugin-dir', join(workspace, '.claude', 'plugins')],
+        },
+      },
     };
     writeFileSync(input, JSON.stringify({ providerInstances: map }));
     const result = runReport(input, workspace);
     assert.equal(result.status, 0, result.stderr);
     const report = JSON.parse(result.stdout);
     const serialized = JSON.stringify(report.snapshot);
-    for (const forbidden of ['private label', 'private color', 'private home', 'private model', 'private host', 'private password', 'private account', 'homePath', 'serverPassword', 'customModels', 'authMethod']) {
+    for (const forbidden of [
+      'private label',
+      'private color',
+      'private home',
+      'private model',
+      'private host',
+      'private password',
+      'private account',
+      'homePath',
+      'serverPassword',
+      'customModels',
+      'authMethod',
+    ]) {
       assert.doesNotMatch(serialized, new RegExp(forbidden));
     }
     assert.equal(report.snapshot.providerInstances.mapextra1.config.agentId, 'github-copilot-cli');
-    assert.deepEqual(report.snapshot.providerInstances.mapextra1.config.commandArgs, ['--plugin-dir', '{workspace}/.claude/plugins']);
+    assert.deepEqual(report.snapshot.providerInstances.mapextra1.config.commandArgs, [
+      '--plugin-dir',
+      '{workspace}/.claude/plugins',
+    ]);
     assert.equal(report.snapshot.providerInstances.mapextra2.config.binaryPath, 'antigravity');
     assert.equal(report.snapshot.providerInstances.mapextra3.config.binaryPath, 'claude');
     assert.equal(report.snapshot.providerInstances.mapextra4.config.binaryPath, 'codex');
@@ -259,11 +402,23 @@ test('snapshot rules omit model selections and keep unknown property values priv
     const input = join(dir, 'settings.json');
     const workspace = join(dir, 'workspace');
     mkdirSync(workspace);
-    const secret = ['runtime', 'generated', 'canary', String(Math.floor(Math.random() * 1e9))].join('_');
-    const keys = Array.from({ length: 12 }, (_, index) => `newNested${index}_${Math.floor(Math.random() * 1e6)}`);
+    const secret = ['runtime', 'generated', 'canary', String(Math.floor(Math.random() * 1e9))].join(
+      '_',
+    );
+    const keys = Array.from(
+      { length: 12 },
+      (_, index) => `newNested${index}_${Math.floor(Math.random() * 1e6)}`,
+    );
     const instance = { driver: 'claudeAgent', enabled: true, config: {} };
     for (const key of keys) instance.config[key] = secret;
-    writeFileSync(input, JSON.stringify({ defaultModelSelection: { instanceId: 'known', model: secret }, textGenerationModelSelection: { instanceId: 'known', model: secret }, providerInstances: { claudeTest: instance } }));
+    writeFileSync(
+      input,
+      JSON.stringify({
+        defaultModelSelection: { instanceId: 'known', model: secret },
+        textGenerationModelSelection: { instanceId: 'known', model: secret },
+        providerInstances: { claudeTest: instance },
+      }),
+    );
     const result = runReport(input, workspace);
     assert.equal(result.status, 0, result.stderr);
     assert.doesNotMatch(result.stdout + result.stderr, new RegExp(secret));
@@ -280,16 +435,41 @@ test('snapshot rules omit model selections and keep unknown property values priv
 test('local T3 contract comparison accepts an explicit fixture source', () => {
   const dir = mkdtempSync(join(tmpdir(), 'maxstack-t3-'));
   try {
-    const fixture = JSON.parse(readFileSync(join(root, 'scripts', 'fixtures', 't3', 'server-settings-keys.json'), 'utf8'));
+    const fixture = JSON.parse(
+      readFileSync(join(root, 'scripts', 'fixtures', 't3', 'server-settings-keys.json'), 'utf8'),
+    );
     const source = join(dir, 'settings.ts');
-    const schema = fixture.keys.map((key) => `  ${key}: Schema.optionalKey(Schema.Unknown),`).join('\n');
+    const schema = fixture.keys
+      .map((key) => `  ${key}: Schema.optionalKey(Schema.Unknown),`)
+      .join('\n');
     const allowlist = JSON.parse(readFileSync(join(root, 't3', 'allowlist.json'), 'utf8'));
-    const schemaNames = { claudeAgent: 'ClaudeSettings', codex: 'CodexSettings', pi: 'PiSettings', opencode: 'OpenCodeSettings', antigravity: 'AntigravitySettings', acpRegistry: 'AcpRegistrySettings' };
-    const providerSchemas = Object.entries(schemaNames).map(([driver, name]) => `export const ${name} = Schema.Struct({ enabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(${allowlist.driverEnabledDefaults[driver]}))) });`).join('\n');
-    const legacyDrivers = ['claudeAgent', 'codex', 'pi', 'opencode', 'antigravity'].map((driver) => `    ${driver}: Schema.Unknown,`).join('\n');
-    writeFileSync(source, `${providerSchemas}\nexport const ServerSettings = Schema.Struct({\n${schema}\n  providers: Schema.Struct({\n${legacyDrivers}\n  }).pipe(Schema.withDecodingDefault(Effect.succeed({}))),\n});\n`);
+    const schemaNames = {
+      claudeAgent: 'ClaudeSettings',
+      codex: 'CodexSettings',
+      pi: 'PiSettings',
+      opencode: 'OpenCodeSettings',
+      antigravity: 'AntigravitySettings',
+      acpRegistry: 'AcpRegistrySettings',
+    };
+    const providerSchemas = Object.entries(schemaNames)
+      .map(
+        ([driver, name]) =>
+          `export const ${name} = Schema.Struct({ enabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(${allowlist.driverEnabledDefaults[driver]}))) });`,
+      )
+      .join('\n');
+    const legacyDrivers = ['claudeAgent', 'codex', 'pi', 'opencode', 'antigravity']
+      .map((driver) => `    ${driver}: Schema.Unknown,`)
+      .join('\n');
+    writeFileSync(
+      source,
+      `${providerSchemas}\nexport const ServerSettings = Schema.Struct({\n${schema}\n  providers: Schema.Struct({\n${legacyDrivers}\n  }).pipe(Schema.withDecodingDefault(Effect.succeed({}))),\n});\n`,
+    );
     const env = { ...process.env, PYTHONDONTWRITEBYTECODE: '1' };
-    const python = spawnSync('python', [join(root, 'scripts', 'verify-manifests.py'), '--t3-contract', source], { cwd: root, windowsHide: true, encoding: 'utf8', env });
+    const python = spawnSync(
+      'python',
+      [join(root, 'scripts', 'verify-manifests.py'), '--t3-contract', source],
+      { cwd: root, windowsHide: true, encoding: 'utf8', env },
+    );
     assert.equal(python.status, 0, `${python.stdout}\n${python.stderr}`);
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -302,9 +482,23 @@ test('known driver config fields reject nested unknowns and ACP IDs stay closed'
     const input = join(dir, 'settings.json');
     const workspace = join(dir, 'workspace');
     mkdirSync(workspace);
-    const value = ['fixture', 'nested', 'canary', String(Math.floor(Math.random() * 1e9))].join('_');
+    const value = ['fixture', 'nested', 'canary', String(Math.floor(Math.random() * 1e9))].join(
+      '_',
+    );
     const drivers = ['claudeAgent', 'codex', 'pi', 'opencode', 'antigravity', 'acpRegistry'];
-    const providers = Object.fromEntries(drivers.map((driver, index) => [`instance-${index}`, { driver, enabled: true, config: { newDriverField: value, ...(driver === 'acpRegistry' ? { agentId: value } : {}) } }]));
+    const providers = Object.fromEntries(
+      drivers.map((driver, index) => [
+        `instance-${index}`,
+        {
+          driver,
+          enabled: true,
+          config: {
+            newDriverField: value,
+            ...(driver === 'acpRegistry' ? { agentId: value } : {}),
+          },
+        },
+      ]),
+    );
     writeFileSync(input, JSON.stringify({ providerInstances: providers }));
     const result = runReport(input, workspace);
     assert.equal(result.status, 0, result.stderr);
@@ -330,20 +524,52 @@ test('ACP config policy withdrawal blocks every copied field before normalizatio
     mkdirSync(workspace);
     copyFileSync(helper, join(scripts, 'Install-T3Settings.ps1'));
     copyFileSync(join(root, 't3', 'defaults.json'), join(t3, 'defaults.json'));
-    const values = { source: 'registry', distribution: 'auto', agentId: 'github-copilot-cli', commandPath: 'copilot', commandArgs: [] };
-    const canary = ['fixture', 'acp', 'field', 'canary', String(Math.floor(Math.random() * 1e9))].join('_');
+    const values = {
+      source: 'registry',
+      distribution: 'auto',
+      agentId: 'github-copilot-cli',
+      commandPath: 'copilot',
+      commandArgs: [],
+    };
+    const canary = [
+      'fixture',
+      'acp',
+      'field',
+      'canary',
+      String(Math.floor(Math.random() * 1e9)),
+    ].join('_');
     for (const field of Object.keys(values)) {
       const policy = JSON.parse(readFileSync(join(root, 't3', 'allowlist.json'), 'utf8'));
-      policy.drivers.acpRegistry.allowed = policy.drivers.acpRegistry.allowed.filter((key) => key !== field);
+      policy.drivers.acpRegistry.allowed = policy.drivers.acpRegistry.allowed.filter(
+        (key) => key !== field,
+      );
       writeFileSync(join(t3, 'allowlist.json'), JSON.stringify(policy));
-      const config = { ...values, [field]: field === 'commandArgs' ? ['--plugin-dir', canary] : field === 'commandPath' ? canary : values[field] };
-      writeFileSync(input, JSON.stringify({ providerInstances: { copilotWork: { driver: 'acpRegistry', config } } }));
+      const config = {
+        ...values,
+        [field]:
+          field === 'commandArgs'
+            ? ['--plugin-dir', canary]
+            : field === 'commandPath'
+              ? canary
+              : values[field],
+      };
+      writeFileSync(
+        input,
+        JSON.stringify({ providerInstances: { copilotWork: { driver: 'acpRegistry', config } } }),
+      );
       const result = runReportWithHelper(input, workspace, join(scripts, 'Install-T3Settings.ps1'));
       assert.equal(result.status, 0, result.stderr);
       assert.doesNotMatch(result.stdout + result.stderr, new RegExp(canary));
       const report = JSON.parse(result.stdout);
-      assert.equal(report.snapshot.providerInstances.mapextra1.config?.[field], undefined, `${field} must not be persisted after policy withdrawal`);
-      assert.ok(report.unknownKeys.includes(`providerInstances.mapextra1.config.${field}`), `${field} should be classified as unknown`);
+      assert.equal(
+        report.snapshot.providerInstances.mapextra1.config?.[field],
+        undefined,
+        `${field} must not be persisted after policy withdrawal`,
+      );
+      assert.ok(
+        report.unknownKeys.includes(`providerInstances.mapextra1.config.${field}`),
+        `${field} should be classified as unknown`,
+      );
     }
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -356,7 +582,16 @@ test('null enum handling distinguishes nonnullable fields from approved nullable
     const input = join(dir, 'settings.json');
     const workspace = join(dir, 'workspace');
     mkdirSync(workspace);
-    writeFileSync(input, JSON.stringify({ responseStreamingMode: null, branchNamingMode: null, defaultRuntimeMode: null, defaultThreadEnvMode: null, pullRequestMergeMethod: null }));
+    writeFileSync(
+      input,
+      JSON.stringify({
+        responseStreamingMode: null,
+        branchNamingMode: null,
+        defaultRuntimeMode: null,
+        defaultThreadEnvMode: null,
+        pullRequestMergeMethod: null,
+      }),
+    );
     const result = runReport(input, workspace, true);
     assert.equal(result.status, 0, result.stderr);
     const report = JSON.parse(result.stdout);
@@ -384,8 +619,21 @@ test('providerInstances top policy controls map copying and classification', () 
     mkdirSync(workspace);
     copyFileSync(helper, join(scripts, 'Install-T3Settings.ps1'));
     copyFileSync(join(root, 't3', 'defaults.json'), join(t3, 'defaults.json'));
-    const secret = ['fixture', 'provider', 'map', 'canary', String(Math.floor(Math.random() * 1e9))].join('_');
-    writeFileSync(input, JSON.stringify({ providerInstances: { synthetic: { driver: 'pi', enabled: true, config: { privateValue: secret } } } }));
+    const secret = [
+      'fixture',
+      'provider',
+      'map',
+      'canary',
+      String(Math.floor(Math.random() * 1e9)),
+    ].join('_');
+    writeFileSync(
+      input,
+      JSON.stringify({
+        providerInstances: {
+          synthetic: { driver: 'pi', enabled: true, config: { privateValue: secret } },
+        },
+      }),
+    );
     for (const classification of ['unknown', 'excluded']) {
       const policy = JSON.parse(readFileSync(join(root, 't3', 'allowlist.json'), 'utf8'));
       delete policy.top.providerInstances;
@@ -418,12 +666,23 @@ function runProviderEnvelopePolicyCase(field, classification) {
     mkdirSync(workspace);
     copyFileSync(helper, join(scripts, 'Install-T3Settings.ps1'));
     copyFileSync(join(root, 't3', 'defaults.json'), join(t3, 'defaults.json'));
-    const secret = ['fixture', 'envelope', 'canary', String(Math.floor(Math.random() * 1e9))].join('_');
+    const secret = ['fixture', 'envelope', 'canary', String(Math.floor(Math.random() * 1e9))].join(
+      '_',
+    );
     const policy = JSON.parse(readFileSync(join(root, 't3', 'allowlist.json'), 'utf8'));
-    policy.providerEnvelope.allowed = policy.providerEnvelope.allowed.filter((key) => key !== field);
-    Object.assign(policy.providerEnvelope.excluded, classification === 'excluded' ? { [field]: 'fixture exclusion' } : {});
+    policy.providerEnvelope.allowed = policy.providerEnvelope.allowed.filter(
+      (key) => key !== field,
+    );
+    Object.assign(
+      policy.providerEnvelope.excluded,
+      classification === 'excluded' ? { [field]: 'fixture exclusion' } : {},
+    );
     writeFileSync(join(t3, 'allowlist.json'), JSON.stringify(policy));
-    const instance = { driver: 'claudeAgent', enabled: true, config: { binaryPath: 'claude', launchArgs: '' } };
+    const instance = {
+      driver: 'claudeAgent',
+      enabled: true,
+      config: { binaryPath: 'claude', launchArgs: '' },
+    };
     instance[field] = field === 'config' ? { privateValue: secret } : secret;
     writeFileSync(input, JSON.stringify({ providerInstances: { synthetic: instance } }));
     const result = runReportWithHelper(input, workspace, join(scripts, 'Install-T3Settings.ps1'));
@@ -443,7 +702,8 @@ function runProviderEnvelopePolicyCase(field, classification) {
 
 test('provider envelope policy controls driver enabled and config copying', () => {
   for (const field of ['driver', 'enabled', 'config']) {
-    for (const classification of ['unknown', 'excluded']) runProviderEnvelopePolicyCase(field, classification);
+    for (const classification of ['unknown', 'excluded'])
+      runProviderEnvelopePolicyCase(field, classification);
   }
 });
 
@@ -455,13 +715,27 @@ test('command path normalization rejects sibling prefixes and traversal, while h
     mkdirSync(workspace);
     const wrapper = join(workspace, '.maxstack', 'bin', 'copilot.cmd');
     const sibling = `${workspace}-backup/.maxstack/bin/copilot.cmd`;
-    const values = [wrapper.toUpperCase().replaceAll('\\', '/'), `\\\\?\\${wrapper}`, sibling, `${workspace}/../outside/copilot.cmd`, '.maxstack/bin/copilot.cmd'];
-    const instances = Object.fromEntries(values.map((binaryPath, index) => [`path-${index}`, { driver: 'codex', config: { binaryPath, launchArgs: '' } }]));
+    const values = [
+      wrapper.toUpperCase().replaceAll('\\', '/'),
+      `\\\\?\\${wrapper}`,
+      sibling,
+      `${workspace}/../outside/copilot.cmd`,
+      '.maxstack/bin/copilot.cmd',
+    ];
+    const instances = Object.fromEntries(
+      values.map((binaryPath, index) => [
+        `path-${index}`,
+        { driver: 'codex', config: { binaryPath, launchArgs: '' } },
+      ]),
+    );
     writeFileSync(input, JSON.stringify({ providerInstances: instances }));
     const result = runReport(input, workspace);
     assert.equal(result.status, 0, result.stderr);
     const serialized = JSON.stringify(JSON.parse(result.stdout).snapshot);
-    assert.equal((serialized.match(/\{workspace\}\/\.maxstack\/bin\/copilot\.cmd/g) ?? []).length, 2);
+    assert.equal(
+      (serialized.match(/\{workspace\}\/\.maxstack\/bin\/copilot\.cmd/g) ?? []).length,
+      2,
+    );
     assert.equal((serialized.match(/\{path\}/g) ?? []).length, 3);
     assert.doesNotMatch(serialized, /backup|outside/);
   } finally {
@@ -478,16 +752,36 @@ test('launchArgs accepts the workspace plugin root and refuses paths outside it'
     mkdirSync(plugins, { recursive: true });
     const outside = join(dir, 'outside', 'plugins');
     mkdirSync(outside, { recursive: true });
-    writeFileSync(input, JSON.stringify({ providerInstances: {
-      claudeWorkspaceWithSpaces: { driver: 'claudeAgent', config: { binaryPath: 'claude', launchArgs: `--plugin-dir "${plugins}"` } },
-      piWorkspaceWithSpaces: { driver: 'pi', config: { binaryPath: 'pi', launchArgs: `--plugin-dir "${outside}"` } },
-    } }));
+    writeFileSync(
+      input,
+      JSON.stringify({
+        providerInstances: {
+          claudeWorkspaceWithSpaces: {
+            driver: 'claudeAgent',
+            config: { binaryPath: 'claude', launchArgs: `--plugin-dir "${plugins}"` },
+          },
+          piWorkspaceWithSpaces: {
+            driver: 'pi',
+            config: { binaryPath: 'pi', launchArgs: `--plugin-dir "${outside}"` },
+          },
+        },
+      }),
+    );
     const result = runReport(input, workspace);
     assert.equal(result.status, 0, result.stderr);
     const snapshot = JSON.parse(result.stdout).snapshot;
-    assert.equal(snapshot.providerInstances['claude{Workspace}'].config.launchArgs, '--plugin-dir {workspace}/.claude/plugins');
-    assert.match(snapshot.providerInstances['pi{Workspace}'].config.launchArgs, /\{args: 2 tokens\}/);
-    assert.equal(JSON.parse(result.stdout).drift.find((item) => item.id === 'claude{Workspace}').state, 'matching');
+    assert.equal(
+      snapshot.providerInstances['claude{Workspace}'].config.launchArgs,
+      '--plugin-dir {workspace}/.claude/plugins',
+    );
+    assert.match(
+      snapshot.providerInstances['pi{Workspace}'].config.launchArgs,
+      /\{args: 2 tokens\}/,
+    );
+    assert.equal(
+      JSON.parse(result.stdout).drift.find((item) => item.id === 'claude{Workspace}').state,
+      'matching',
+    );
     assert.doesNotMatch(JSON.stringify(snapshot), /outside/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -501,8 +795,39 @@ test('legacy config enabled folds into the envelope with false winning and stabl
     mkdirSync(workspace);
     const firstPath = join(dir, 'first.json');
     const secondPath = join(dir, 'second.json');
-    writeFileSync(firstPath, JSON.stringify({ providerInstances: { claudeWorkspace: { driver: 'claudeAgent', config: { enabled: true, binaryPath: 'claude', launchArgs: '' } }, piWorkspace: { driver: 'pi', enabled: true, config: { enabled: false, binaryPath: 'pi', launchArgs: '' } } } }));
-    writeFileSync(secondPath, JSON.stringify({ providerInstances: { claudeWorkspace: { driver: 'claudeAgent', enabled: true, config: { binaryPath: 'claude', launchArgs: '' } }, piWorkspace: { driver: 'pi', enabled: false, config: { binaryPath: 'pi', launchArgs: '' } } } }));
+    writeFileSync(
+      firstPath,
+      JSON.stringify({
+        providerInstances: {
+          claudeWorkspace: {
+            driver: 'claudeAgent',
+            config: { enabled: true, binaryPath: 'claude', launchArgs: '' },
+          },
+          piWorkspace: {
+            driver: 'pi',
+            enabled: true,
+            config: { enabled: false, binaryPath: 'pi', launchArgs: '' },
+          },
+        },
+      }),
+    );
+    writeFileSync(
+      secondPath,
+      JSON.stringify({
+        providerInstances: {
+          claudeWorkspace: {
+            driver: 'claudeAgent',
+            enabled: true,
+            config: { binaryPath: 'claude', launchArgs: '' },
+          },
+          piWorkspace: {
+            driver: 'pi',
+            enabled: false,
+            config: { binaryPath: 'pi', launchArgs: '' },
+          },
+        },
+      }),
+    );
     const first = runReport(firstPath, workspace);
     const second = runReport(secondPath, workspace);
     assert.equal(first.status, 0, first.stderr);
@@ -526,12 +851,42 @@ test('drift report emits matching, differs, missing, unset, unverifiable, extra,
     mkdirSync(join(workspace, '.claude', 'plugins'), { recursive: true });
     const input = join(dir, 'settings.json');
     const providers = {
-      claudeWorkspace: { driver: 'claudeAgent', enabled: true, config: { binaryPath: 'claude', launchArgs: `--plugin-dir ${join(workspace, '.claude', 'plugins')}` } },
-      copilotWorkspace: { driver: 'acpRegistry', enabled: true, config: { source: 'registry', agentId: 'github-copilot-cli', distribution: 'auto', commandPath: join(workspace, '.maxstack', 'bin', 'copilot.cmd') } },
-      piWorkspace: { driver: 'pi', enabled: true, config: { binaryPath: join(workspace, '.maxstack', 'bin', 'pi.cmd'), launchArgs: '' } },
-      codexUser: { driver: 'codex', enabled: true, config: { binaryPath: 'codex', launchArgs: '' } },
+      claudeWorkspace: {
+        driver: 'claudeAgent',
+        enabled: true,
+        config: {
+          binaryPath: 'claude',
+          launchArgs: `--plugin-dir ${join(workspace, '.claude', 'plugins')}`,
+        },
+      },
+      copilotWorkspace: {
+        driver: 'acpRegistry',
+        enabled: true,
+        config: {
+          source: 'registry',
+          agentId: 'github-copilot-cli',
+          distribution: 'auto',
+          commandPath: join(workspace, '.maxstack', 'bin', 'copilot.cmd'),
+        },
+      },
+      piWorkspace: {
+        driver: 'pi',
+        enabled: true,
+        config: { binaryPath: join(workspace, '.maxstack', 'bin', 'pi.cmd'), launchArgs: '' },
+      },
+      codexUser: {
+        driver: 'codex',
+        enabled: true,
+        config: { binaryPath: 'codex', launchArgs: '' },
+      },
     };
-    const live = { defaultAutoPull: false, responseStreamingMode: 'sentence', github: { token: 'hidden' }, unknownSetting: 'hidden', providerInstances: providers };
+    const live = {
+      defaultAutoPull: false,
+      responseStreamingMode: 'sentence',
+      github: { token: 'hidden' },
+      unknownSetting: 'hidden',
+      providerInstances: providers,
+    };
     writeFileSync(input, JSON.stringify(live));
     const result = runReport(input, workspace);
     assert.equal(result.status, 0, result.stderr);
@@ -594,7 +949,12 @@ test('an inaccessible source handle is reported without exposing the I/O error',
     const env = { ...process.env };
     delete env.MAXSTACK_T3_SETTINGS;
     delete env.T3CODE_HOME;
-    const result = spawnSync(shell, ['-NoProfile', '-Command', command], { cwd: root, windowsHide: true, encoding: 'utf8', env });
+    const result = spawnSync(shell, ['-NoProfile', '-Command', command], {
+      cwd: root,
+      windowsHide: true,
+      encoding: 'utf8',
+      env,
+    });
     assert.equal(result.status, 0, result.stderr);
     assert.equal(JSON.parse(result.stdout).sourceState, 'unreadable');
     assert.doesNotMatch(result.stdout + result.stderr, /sharing violation|exception|path/i);
@@ -611,14 +971,20 @@ test('sparse providers work with Stop, reject array ACP ids, and redact token-sh
     mkdirSync(workspace);
     const canary = ['probe', 'array', 'secret', String(Math.random())].join('_');
     const hexKey = 'ab'.repeat(24);
-    writeFileSync(input, JSON.stringify({
-      providerInstances: {
-        sparse: { driver: 'claudeAgent', config: { binaryPath: 'claude', launchArgs: '' } },
-        acp: { driver: 'acpRegistry', config: { agentId: ['github-copilot-cli', canary] } },
-        wrongDriver: { driver: ['acpRegistry', canary], config: { agentId: 'github-copilot-cli' } },
-      },
-      [hexKey]: canary,
-    }));
+    writeFileSync(
+      input,
+      JSON.stringify({
+        providerInstances: {
+          sparse: { driver: 'claudeAgent', config: { binaryPath: 'claude', launchArgs: '' } },
+          acp: { driver: 'acpRegistry', config: { agentId: ['github-copilot-cli', canary] } },
+          wrongDriver: {
+            driver: ['acpRegistry', canary],
+            config: { agentId: 'github-copilot-cli' },
+          },
+        },
+        [hexKey]: canary,
+      }),
+    );
     const result = runReport(input, workspace, true);
     assert.equal(result.status, 0, result.stderr);
     assert.equal(result.stderr, '');
@@ -641,12 +1007,24 @@ test('unknown credential key names redact before truncation and across punctuati
     const workspace = join(dir, 'workspace');
     const input = join(dir, 'settings.json');
     mkdirSync(workspace);
-    const entropy = Array.from({ length: 32 }, (_, index) => ((index * 7 + 3) % 16).toString(16)).join('');
-    const embedded = Array.from({ length: 40 }, (_, index) => String.fromCharCode(65 + ((index * 11 + 5) % 26))).join('');
+    const entropy = Array.from({ length: 32 }, (_, index) =>
+      ((index * 7 + 3) % 16).toString(16),
+    ).join('');
+    const embedded = Array.from({ length: 40 }, (_, index) =>
+      String.fromCharCode(65 + ((index * 11 + 5) % 26)),
+    ).join('');
     const longPrefix = `prefix-${'x-'.repeat(50)}-apiKey:${entropy}`;
     const credentialName = `metadata:${embedded}:credential/${entropy}`;
     const ordinary = 'zzNewKey';
-    writeFileSync(input, JSON.stringify({ [longPrefix]: 'private', [credentialName]: 'private', [ordinary]: 'private', providerInstances: {} }));
+    writeFileSync(
+      input,
+      JSON.stringify({
+        [longPrefix]: 'private',
+        [credentialName]: 'private',
+        [ordinary]: 'private',
+        providerInstances: {},
+      }),
+    );
     const result = runReport(input, workspace);
     assert.equal(result.status, 0, result.stderr);
     const report = JSON.parse(result.stdout);
@@ -666,35 +1044,126 @@ test('provider instances, configs, and ACP argument shapes fail closed without l
     const workspace = join(dir, 'workspace');
     mkdirSync(workspace);
     const input = join(dir, 'settings.json');
-    const badPath = join(workspace, '.claude', `plugins${String.fromCharCode(0)}${['fixture', 'path', String(Math.random())].join('_')}`);
+    const badPath = join(
+      workspace,
+      '.claude',
+      `plugins${String.fromCharCode(0)}${['fixture', 'path', String(Math.random())].join('_')}`,
+    );
     const fixtures = [
       { providerInstances: 'private provider map' },
       { providerInstances: { badInstance: ['private instance'] } },
       { providerInstances: { badConfig: { driver: 'claudeAgent', config: 'private config' } } },
-      { providerInstances: { badLaunchType: { driver: 'claudeAgent', config: { launchArgs: ['--plugin-dir', badPath] } } } },
-      { providerInstances: { badLaunchSyntax: { driver: 'claudeAgent', config: { launchArgs: '--other private-argument' } } } },
-      { providerInstances: { badAcpArgsType: { driver: 'acpRegistry', config: { agentId: 'github-copilot-cli', commandArgs: 'private argument' } } } },
-      { providerInstances: { badAcpArgsFlag: { driver: 'acpRegistry', config: { agentId: 'github-copilot-cli', commandArgs: ['--other', join(workspace, '.claude', 'plugins')] } } } },
-      { providerInstances: { badAcpArgsPath: { driver: 'acpRegistry', config: { agentId: 'github-copilot-cli', commandArgs: ['--plugin-dir', 7] } } } },
-      { providerInstances: { badAcpId: { driver: 'acpRegistry', config: { agentId: 'fixture-agent', commandArgs: [] } } } },
+      {
+        providerInstances: {
+          badLaunchType: {
+            driver: 'claudeAgent',
+            config: { launchArgs: ['--plugin-dir', badPath] },
+          },
+        },
+      },
+      {
+        providerInstances: {
+          badLaunchSyntax: {
+            driver: 'claudeAgent',
+            config: { launchArgs: '--other private-argument' },
+          },
+        },
+      },
+      {
+        providerInstances: {
+          badAcpArgsType: {
+            driver: 'acpRegistry',
+            config: { agentId: 'github-copilot-cli', commandArgs: 'private argument' },
+          },
+        },
+      },
+      {
+        providerInstances: {
+          badAcpArgsFlag: {
+            driver: 'acpRegistry',
+            config: {
+              agentId: 'github-copilot-cli',
+              commandArgs: ['--other', join(workspace, '.claude', 'plugins')],
+            },
+          },
+        },
+      },
+      {
+        providerInstances: {
+          badAcpArgsPath: {
+            driver: 'acpRegistry',
+            config: { agentId: 'github-copilot-cli', commandArgs: ['--plugin-dir', 7] },
+          },
+        },
+      },
+      {
+        providerInstances: {
+          badAcpId: {
+            driver: 'acpRegistry',
+            config: { agentId: 'fixture-agent', commandArgs: [] },
+          },
+        },
+      },
     ];
     for (const fixture of fixtures) {
       writeFileSync(input, JSON.stringify(fixture));
       const result = runReport(input, workspace, true);
       assert.equal(result.status, 0, result.stderr);
       assert.equal(result.stderr, '');
-      assert.doesNotMatch(result.stdout + result.stderr, /private provider map|private instance|private config|private argument|fixture-agent/);
+      assert.doesNotMatch(
+        result.stdout + result.stderr,
+        /private provider map|private instance|private config|private argument|fixture-agent/,
+      );
       assert.ok(JSON.parse(result.stdout).strictFailures.includes('unverifiable'));
     }
 
-    writeFileSync(input, JSON.stringify({ providerInstances: { copilotExtra: { driver: 'acpRegistry', config: { agentId: 'github-copilot-cli', commandArgs: ['--plugin-dir', join(workspace, '.claude', 'plugins')] } } } }));
+    writeFileSync(
+      input,
+      JSON.stringify({
+        providerInstances: {
+          copilotExtra: {
+            driver: 'acpRegistry',
+            config: {
+              agentId: 'github-copilot-cli',
+              commandArgs: ['--plugin-dir', join(workspace, '.claude', 'plugins')],
+            },
+          },
+        },
+      }),
+    );
     const valid = JSON.parse(runReport(input, workspace).stdout);
-    assert.deepEqual(valid.snapshot.providerInstances.mapextra1.config.commandArgs, ['--plugin-dir', '{workspace}/.claude/plugins']);
+    assert.deepEqual(valid.snapshot.providerInstances.mapextra1.config.commandArgs, [
+      '--plugin-dir',
+      '{workspace}/.claude/plugins',
+    ]);
 
-    const expectedArgs = "$script:T3DefaultsTemplate.instances['copilot{Workspace}'].config.commandArgs = @('--plugin-dir', '{workspace}/.claude/plugins')";
-    writeFileSync(input, JSON.stringify({ providerInstances: { copilotWorkspace: { driver: 'acpRegistry', enabled: true, config: { source: 'registry', agentId: 'github-copilot-cli', distribution: 'auto', commandPath: join(workspace, '.maxstack', 'bin', 'copilot.cmd'), commandArgs: ['--plugin-dir', join(workspace, '.claude', 'plugins')] } } } }));
-    const known = JSON.parse(runReportWithHelper(input, workspace, helper, false, expectedArgs).stdout);
-    assert.deepEqual(known.snapshot.providerInstances['copilot{Workspace}'].config.commandArgs, ['--plugin-dir', '{workspace}/.claude/plugins']);
+    const expectedArgs =
+      "$script:T3DefaultsTemplate.instances['copilot{Workspace}'].config.commandArgs = @('--plugin-dir', '{workspace}/.claude/plugins')";
+    writeFileSync(
+      input,
+      JSON.stringify({
+        providerInstances: {
+          copilotWorkspace: {
+            driver: 'acpRegistry',
+            enabled: true,
+            config: {
+              source: 'registry',
+              agentId: 'github-copilot-cli',
+              distribution: 'auto',
+              commandPath: join(workspace, '.maxstack', 'bin', 'copilot.cmd'),
+              commandArgs: ['--plugin-dir', join(workspace, '.claude', 'plugins')],
+            },
+          },
+        },
+      }),
+    );
+    const known = JSON.parse(
+      runReportWithHelper(input, workspace, helper, false, expectedArgs).stdout,
+    );
+    assert.deepEqual(known.snapshot.providerInstances['copilot{Workspace}'].config.commandArgs, [
+      '--plugin-dir',
+      '{workspace}/.claude/plugins',
+    ]);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -706,17 +1175,34 @@ test('known driver defaults fill missing config fields and unknown wanted fields
     const workspace = join(dir, 'workspace');
     const input = join(dir, 'settings.json');
     mkdirSync(workspace);
-    writeFileSync(input, JSON.stringify({ providerInstances: { claudeWorkspace: { driver: 'claudeAgent', enabled: true, config: {} } } }));
+    writeFileSync(
+      input,
+      JSON.stringify({
+        providerInstances: {
+          claudeWorkspace: { driver: 'claudeAgent', enabled: true, config: {} },
+        },
+      }),
+    );
     const withDefaults = JSON.parse(runReport(input, workspace).stdout);
     const defaultDrift = withDefaults.drift.find((entry) => entry.id === 'claude{Workspace}');
     assert.equal(defaultDrift.state, 'differs');
     assert.equal(defaultDrift.observed.config, undefined);
     assert.equal(defaultDrift.wanted.config.binaryPath, 'claude');
 
-    const preamble = "$script:T3DefaultsTemplate.instances['claude{Workspace}'].config.launchArgs = ''; $script:T3DefaultsTemplate.instances['claude{Workspace}'].config.unlistedFixtureField = 'fixture value'";
-    const withUnknownWantedField = JSON.parse(runReportWithHelper(input, workspace, helper, false, preamble).stdout);
-    assert.equal(withUnknownWantedField.drift.find((entry) => entry.id === 'claude{Workspace}').state, 'differs');
-    assert.equal(withUnknownWantedField.drift.find((entry) => entry.id === 'claude{Workspace}').observed.config, undefined);
+    const preamble =
+      "$script:T3DefaultsTemplate.instances['claude{Workspace}'].config.launchArgs = ''; $script:T3DefaultsTemplate.instances['claude{Workspace}'].config.unlistedFixtureField = 'fixture value'";
+    const withUnknownWantedField = JSON.parse(
+      runReportWithHelper(input, workspace, helper, false, preamble).stdout,
+    );
+    assert.equal(
+      withUnknownWantedField.drift.find((entry) => entry.id === 'claude{Workspace}').state,
+      'differs',
+    );
+    assert.equal(
+      withUnknownWantedField.drift.find((entry) => entry.id === 'claude{Workspace}').observed
+        .config,
+      undefined,
+    );
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -729,9 +1215,22 @@ test('plugin path parsing rejects invalid syntax and returns stale on snapshot r
     const input = join(dir, 'settings.json');
     mkdirSync(workspace);
     const invalidPluginPath = join(workspace, '.claude', `plugins${String.fromCharCode(0)}fixture`);
-    writeFileSync(input, JSON.stringify({ providerInstances: { invalidPath: { driver: 'claudeAgent', config: { launchArgs: `--plugin-dir "${invalidPluginPath}"` } } } }));
+    writeFileSync(
+      input,
+      JSON.stringify({
+        providerInstances: {
+          invalidPath: {
+            driver: 'claudeAgent',
+            config: { launchArgs: `--plugin-dir "${invalidPluginPath}"` },
+          },
+        },
+      }),
+    );
     const invalidPath = JSON.parse(runReport(input, workspace).stdout);
-    assert.match(invalidPath.snapshot.providerInstances.mapextra1.config.launchArgs, /\{args: 2 tokens\}/);
+    assert.match(
+      invalidPath.snapshot.providerInstances.mapextra1.config.launchArgs,
+      /\{args: 2 tokens\}/,
+    );
 
     const snapshot = join(workspace, '.maxstack', 't3', 'settings.snapshot.json');
     mkdirSync(join(workspace, '.maxstack', 't3'), { recursive: true });
@@ -740,7 +1239,12 @@ test('plugin path parsing rejects invalid syntax and returns stale on snapshot r
     const env = { ...process.env };
     delete env.MAXSTACK_T3_SETTINGS;
     delete env.T3CODE_HOME;
-    const result = spawnSync(shell, ['-NoProfile', '-Command', code], { cwd: root, windowsHide: true, encoding: 'utf8', env });
+    const result = spawnSync(shell, ['-NoProfile', '-Command', code], {
+      cwd: root,
+      windowsHide: true,
+      encoding: 'utf8',
+      env,
+    });
     assert.equal(result.status, 0, result.stderr);
     assert.equal(JSON.parse(result.stdout).stale, true);
   } finally {
@@ -753,9 +1257,22 @@ test('workspace wrapper paths fail closed when the workspace cannot be resolved'
   try {
     const workspace = join(dir, 'missing-workspace');
     const input = join(dir, 'settings.json');
-    writeFileSync(input, JSON.stringify({ providerInstances: { copilotMissingWorkspace: { driver: 'acpRegistry', config: { commandPath: join(workspace, '.maxstack', 'bin', 'copilot.cmd') } } } }));
+    writeFileSync(
+      input,
+      JSON.stringify({
+        providerInstances: {
+          copilotMissingWorkspace: {
+            driver: 'acpRegistry',
+            config: { commandPath: join(workspace, '.maxstack', 'bin', 'copilot.cmd') },
+          },
+        },
+      }),
+    );
     const report = JSON.parse(runReport(input, workspace).stdout);
-    assert.equal(report.snapshot.providerInstances['copilot{Workspace}'].config.commandPath, '{path}');
+    assert.equal(
+      report.snapshot.providerInstances['copilot{Workspace}'].config.commandPath,
+      '{path}',
+    );
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -768,15 +1285,42 @@ test('storage cleanup policy copies valid nullable values and reports unknowns w
     const input = join(dir, 'settings.json');
     mkdirSync(workspace);
     const canary = ['nested', 'fixture', String(Math.random())].join('_');
-    writeFileSync(input, JSON.stringify({
-      storageCleanup: { worktreeAfterDays: null, worktreeOnMerge: false, worktreeOnDelete: true, worktreeUnchanged: false, browserArtifactsAfterDays: 3650, logsAfterDays: 1 },
-    }));
+    writeFileSync(
+      input,
+      JSON.stringify({
+        storageCleanup: {
+          worktreeAfterDays: null,
+          worktreeOnMerge: false,
+          worktreeOnDelete: true,
+          worktreeUnchanged: false,
+          browserArtifactsAfterDays: 3650,
+          logsAfterDays: 1,
+        },
+      }),
+    );
     const valid = runReport(input, workspace);
     assert.equal(valid.status, 0, valid.stderr);
     const value = JSON.parse(valid.stdout).snapshot.storageCleanup;
-    assert.deepEqual(value, { worktreeAfterDays: null, worktreeOnMerge: false, worktreeOnDelete: true, worktreeUnchanged: false, browserArtifactsAfterDays: 3650, logsAfterDays: 1 });
+    assert.deepEqual(value, {
+      worktreeAfterDays: null,
+      worktreeOnMerge: false,
+      worktreeOnDelete: true,
+      worktreeUnchanged: false,
+      browserArtifactsAfterDays: 3650,
+      logsAfterDays: 1,
+    });
 
-    writeFileSync(input, JSON.stringify({ storageCleanup: { worktreeAfterDays: canary, logsAfterDays: 0, newCleanupKey: canary, WorktreeOnMerge: true } }));
+    writeFileSync(
+      input,
+      JSON.stringify({
+        storageCleanup: {
+          worktreeAfterDays: canary,
+          logsAfterDays: 0,
+          newCleanupKey: canary,
+          WorktreeOnMerge: true,
+        },
+      }),
+    );
     const invalid = runReport(input, workspace);
     assert.equal(invalid.status, 0, invalid.stderr);
     assert.doesNotMatch(invalid.stdout + invalid.stderr, new RegExp(canary));
@@ -800,7 +1344,10 @@ test('malformed provider maps and values report unverifiable states instead of m
     writeFileSync(input, JSON.stringify({ providerInstances: 'private provider payload' }));
     const map = JSON.parse(runReport(input, workspace).stdout);
     assert.equal(map.drift.find((item) => item.id === 'claude{Workspace}').state, 'unverifiable');
-    assert.equal(map.drift.some((item) => item.state === 'missing'), false);
+    assert.equal(
+      map.drift.some((item) => item.state === 'missing'),
+      false,
+    );
     assert.doesNotMatch(JSON.stringify(map), /private provider payload/);
 
     writeFileSync(input, JSON.stringify({ providerInstances: { claudeWorkspace: 37 } }));
@@ -817,14 +1364,34 @@ test('null declared defaults differ from requested defaults and known ids are te
     const workspace = join(dir, `marker-${['credential', String(Math.random())].join('_')}`);
     const input = join(dir, 'settings.json');
     mkdirSync(workspace);
-    const slug = workspace.split(/[\\/]/).at(-1).split(/[^A-Za-z0-9]+/).filter(Boolean).map((part) => part[0].toUpperCase() + part.slice(1)).join('');
-    writeFileSync(input, JSON.stringify({ providerInstances: {
-      [`claude${slug}`]: { driver: 'claudeAgent', config: { binaryPath: 'claude', launchArgs: `--plugin-dir "${join(workspace, '.claude', 'plugins')}"` } },
-    } }));
+    const slug = workspace
+      .split(/[\\/]/)
+      .at(-1)
+      .split(/[^A-Za-z0-9]+/)
+      .filter(Boolean)
+      .map((part) => part[0].toUpperCase() + part.slice(1))
+      .join('');
+    writeFileSync(
+      input,
+      JSON.stringify({
+        providerInstances: {
+          [`claude${slug}`]: {
+            driver: 'claudeAgent',
+            config: {
+              binaryPath: 'claude',
+              launchArgs: `--plugin-dir "${join(workspace, '.claude', 'plugins')}"`,
+            },
+          },
+        },
+      }),
+    );
     const result = runReport(input, workspace);
     assert.equal(result.status, 0, result.stderr);
     const report = JSON.parse(result.stdout);
-    assert.equal(report.drift.find((entry) => entry.id === 'defaultThreadEnvMode').state, 'differs');
+    assert.equal(
+      report.drift.find((entry) => entry.id === 'defaultThreadEnvMode').state,
+      'differs',
+    );
     assert.doesNotMatch(result.stdout + result.stderr, /marker-|credential/);
     assert.ok(report.snapshot.providerInstances['claude{Workspace}']);
   } finally {
@@ -850,7 +1417,12 @@ test('snapshot temp path cannot be preplanted and escaping plugin junctions are 
     const env = { ...process.env };
     delete env.MAXSTACK_T3_SETTINGS;
     delete env.T3CODE_HOME;
-    const result = spawnSync(shell, ['-NoProfile', '-Command', code], { cwd: root, windowsHide: true, encoding: 'utf8', env });
+    const result = spawnSync(shell, ['-NoProfile', '-Command', code], {
+      cwd: root,
+      windowsHide: true,
+      encoding: 'utf8',
+      env,
+    });
     assert.equal(result.status, 0, result.stderr);
     assert.match(result.stdout, /refused/);
     assert.equal(readFileSync(destination, 'utf8'), 'planted');
@@ -875,10 +1447,27 @@ test('physical link targets stay inside the workspace for wrappers and plugin ar
       t.skip(`junction creation is unavailable: ${error.code ?? error.message}`);
       return;
     }
-    writeFileSync(input, JSON.stringify({ providerInstances: {
-      command: { driver: 'codex', config: { binaryPath: join(workspace, '.maxstack', 'bin', 'copilot.cmd'), launchArgs: '' } },
-      plugins: { driver: 'claudeAgent', config: { binaryPath: 'claude', launchArgs: `--plugin-dir "${join(workspace, '.claude', 'plugins')}"` } },
-    } }));
+    writeFileSync(
+      input,
+      JSON.stringify({
+        providerInstances: {
+          command: {
+            driver: 'codex',
+            config: {
+              binaryPath: join(workspace, '.maxstack', 'bin', 'copilot.cmd'),
+              launchArgs: '',
+            },
+          },
+          plugins: {
+            driver: 'claudeAgent',
+            config: {
+              binaryPath: 'claude',
+              launchArgs: `--plugin-dir "${join(workspace, '.claude', 'plugins')}"`,
+            },
+          },
+        },
+      }),
+    );
     const result = runReport(input, workspace);
     assert.equal(result.status, 0, result.stderr);
     const serialized = JSON.stringify(JSON.parse(result.stdout).snapshot);
@@ -892,12 +1481,26 @@ test('physical link targets stay inside the workspace for wrappers and plugin ar
     mkdirSync(join(insideWorkspace, '.claude'), { recursive: true });
     symlinkSync(target, join(insideWorkspace, '.claude', 'plugins'), 'junction');
     const insideInput = join(dir, 'inside.json');
-    writeFileSync(insideInput, JSON.stringify({ providerInstances: {
-      claudeInsideWorkspace: { driver: 'claudeAgent', config: { binaryPath: 'claude', launchArgs: `--plugin-dir "${join(insideWorkspace, '.claude', 'plugins')}"` } },
-    } }));
+    writeFileSync(
+      insideInput,
+      JSON.stringify({
+        providerInstances: {
+          claudeInsideWorkspace: {
+            driver: 'claudeAgent',
+            config: {
+              binaryPath: 'claude',
+              launchArgs: `--plugin-dir "${join(insideWorkspace, '.claude', 'plugins')}"`,
+            },
+          },
+        },
+      }),
+    );
     const inside = runReport(insideInput, insideWorkspace);
     assert.equal(inside.status, 0, inside.stderr);
-    assert.equal(JSON.parse(inside.stdout).snapshot.providerInstances['claude{Workspace}'].config.launchArgs, '--plugin-dir {workspace}/.claude/plugins');
+    assert.equal(
+      JSON.parse(inside.stdout).snapshot.providerInstances['claude{Workspace}'].config.launchArgs,
+      '--plugin-dir {workspace}/.claude/plugins',
+    );
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

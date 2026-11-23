@@ -26,7 +26,14 @@ const OWNER_ALIASES = new Map([
 ]);
 
 const DEV_SETUP_REL = join('projects', 'repos', 'dev-setup', 'tools.yaml');
-const ORG_PLUGIN_REL = join('projects', 'repos', 'org-ai-plugin', 'skills', 'service-integrations', 'SKILL.md');
+const ORG_PLUGIN_REL = join(
+  'projects',
+  'repos',
+  'org-ai-plugin',
+  'skills',
+  'service-integrations',
+  'SKILL.md',
+);
 
 function commandWord(text) {
   let token = text.trim();
@@ -118,7 +125,8 @@ function classifyOwner(token, agentIds) {
   if (OWNER_ALIASES.has(token) && agentIds.has(OWNER_ALIASES.get(token))) {
     return { token, status: 'covered', tool: OWNER_ALIASES.get(token) };
   }
-  if (EXEMPT_OWNERS.has(token)) return { token, status: 'exempt', reason: EXEMPT_OWNERS.get(token) };
+  if (EXEMPT_OWNERS.has(token))
+    return { token, status: 'exempt', reason: EXEMPT_OWNERS.get(token) };
   return { token, status: 'uncovered' };
 }
 
@@ -185,17 +193,23 @@ function resolveInputs(args, workspaceRoot, cwd) {
       : null;
 
   const problems = [];
-  if (devSetupFile === null) problems.push(`cannot find the workspace root above ${resolve(cwd)}; pass --dev-setup <path>`);
-  else if (!existsSync(devSetupFile)) problems.push(`missing dev-setup tools.yaml at ${devSetupFile}`);
-  if (orgPluginFile === null) problems.push(`cannot find the workspace root above ${resolve(cwd)}; pass --org-plugin <path>`);
-  else if (!existsSync(orgPluginFile)) problems.push(`missing org integration registry at ${orgPluginFile}`);
+  if (devSetupFile === null)
+    problems.push(`cannot find the workspace root above ${resolve(cwd)}; pass --dev-setup <path>`);
+  else if (!existsSync(devSetupFile))
+    problems.push(`missing dev-setup tools.yaml at ${devSetupFile}`);
+  if (orgPluginFile === null)
+    problems.push(`cannot find the workspace root above ${resolve(cwd)}; pass --org-plugin <path>`);
+  else if (!existsSync(orgPluginFile))
+    problems.push(`missing org integration registry at ${orgPluginFile}`);
   return { devSetupFile, orgPluginFile, problems };
 }
 
 function buildReport(devSetupFile, orgPluginFile, agentIds, results) {
   const uncovered = results.filter((result) => result.status === 'uncovered');
   const exempt = results.filter((result) => result.status === 'exempt');
-  const aliased = results.filter((result) => result.status === 'covered' && result.tool !== result.token);
+  const aliased = results.filter(
+    (result) => result.status === 'covered' && result.tool !== result.token,
+  );
 
   const report = [
     'agent tool parity (workspace-local)',
@@ -209,7 +223,8 @@ function buildReport(devSetupFile, orgPluginFile, agentIds, results) {
   if (uncovered.length === 0) {
     report.push(`PASS: the agent tool set covers every service owner (${exempt.length} exempt).`);
   } else {
-    for (const result of uncovered) report.push(`FAIL: service owner "${result.token}" is not covered by the agent tool set`);
+    for (const result of uncovered)
+      report.push(`FAIL: service owner "${result.token}" is not covered by the agent tool set`);
     report.push(`FAIL: ${uncovered.length} service owner(s) uncovered.`);
   }
   return { ok: uncovered.length === 0, report };
