@@ -25,3 +25,6 @@ trivy.sarif
 # Python bytecode: a build product, never tracked
 __pycache__/
 *.pyc
+
+# Local Lefthook overrides (never committed)
+lefthook-local.yml
