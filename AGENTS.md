@@ -2,7 +2,7 @@
 
 - Keep secrets, tokens, account state, and session databases out of this repository.
 - Bun 1.4.5 formats and lints the `.mjs` scripts. The `node:test` suite, the PowerShell installer run under `pwsh` on Linux, and the Python manifest tooling stay on their runtimes until the C7.3/C7.4 migration recorded in `docs/exceptions.md`.
-- `maxstack` owns AI composition. `dev-setup` owns the machine and the human tool set, including `tools.yaml` and the `with-secrets` and Agent Vault wrappers. `docs/relationship.md` names how the repositories and the ordered plugin layers fit together.
+- `maxstack` owns AI composition. The `sakuragaoka-homelab` machine repositories own the machine and the human tool set; the retired `dev-setup` archive holds the `tools.yaml`, `with-secrets`, and Agent Vault wrappers the fleet used before it moved to Linux. `docs/relationship.md` names how the repositories and the ordered plugin layers fit together.
 - `maxstack` coordinates AI tooling but does not own the plugin. The PStack plugin lives in the `plugins/pstack` folder of the fork `simpsonm09/pstack-max`, branch `main`. Edit it there, never the installed copies under `.opencode`, `.claude`, or `.maxstack`.
 - The pstack pin is one commit, written in two places that must agree: the pstack layer's `source` in `layers.json` and `pstack.lock.json`. Change both in the same commit, then run `just validate`.
 - PStack is scoped to `<workspace>` through that workspace's `opencode.jsonc`, `.opencode`, `.claude`, and `.maxstack` directories. Do not install it globally.

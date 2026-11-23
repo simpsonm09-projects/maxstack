@@ -6,7 +6,7 @@ This document names how the pieces fit together. It covers the repositories that
 
 `maxstack` owns AI composition. It holds the workspace config fragment, the ordered layer manifest, the installer, and the pin on the PStack plugin. It composes the AI layers and does not own any layer it installs.
 
-`dev-setup` owns the machine and the human tool set. It holds the tools a person installs on a host, the `tools.yaml` manifest, the `with-secrets` wrapper, and the Agent Vault wrappers. It does not own AI composition.
+The `sakuragaoka-homelab` machine repositories own the machine and the human tool set. The retired `dev-setup` archive holds the tools a person installed on a host, the `tools.yaml` manifest, the `with-secrets` wrapper, and the Agent Vault wrappers. It does not own AI composition.
 
 The plugin layers own the skills, the agents, the entries, and the MCP servers. Order matters, and each later layer builds on the one before it.
 
@@ -16,7 +16,7 @@ The plugin layers own the skills, the agents, the entries, and the MCP servers. 
 | `org-ai-plugin` | general and portable | MCP servers and skills that apply to any person or machine. |
 | `personal-ai-plugin` | person and machine | MCP servers and skills that name one person and one machine. |
 | `maxstack` | none | AI composition: the config fragment, the layer manifest, the installer, and the PStack pin. |
-| `dev-setup` | none | The machine and the human tool set: tool installs, `tools.yaml`, the `with-secrets` wrapper, and the Agent Vault wrappers. |
+| `dev-setup` (retired) | none | The archive of the machine and the human tool set: tool installs, `tools.yaml`, the `with-secrets` wrapper, and the Agent Vault wrappers. The `sakuragaoka-homelab` machine repositories own them now. |
 
 `layers.json` lists the layers in order. Each layer names the runtimes it installs for: `claude`, `opencode`, `copilot`, and `pi`. `maxstack` reads that order, builds each runtime's folders, merges the config fragments, and installs the agent profiles. A later layer wins where two layers set the same value.
 
@@ -24,17 +24,17 @@ The PStack layer is a git source. The org and personal layers are local checkout
 
 ## The cross-repo edge
 
-`scripts/Install-Workspace.ps1` reads `layers.json` in `maxstack`. The machine tool list, `tools.yaml`, lives in `dev-setup`. The two manifests never read each other. They meet at the workspace, where `maxstack` writes the AI config and `dev-setup` installs the tools a person runs there. A change to the layer order belongs in `maxstack`; a change to the machine tool set belongs in `dev-setup`.
+`scripts/Install-Workspace.ps1` reads `layers.json` in `maxstack`. The machine tool list, `tools.yaml`, lived in `dev-setup` and lives in the `sakuragaoka-homelab` machine repositories now. The two manifests never read each other. They meet at the workspace, where `maxstack` writes the AI config and the machine repositories install the tools a person runs there. A change to the layer order belongs in `maxstack`; a change to the machine tool set belongs in the `sakuragaoka-homelab` machine repositories.
 
 ## The agent tool check
 
-The org integration registry in `org-ai-plugin` names one CLI owner per service. `dev-setup` owns the agent tool set: the ids in `tools.yaml` whose `consumers` list names `agent`. `just check-agent-tools` reads both sibling checkouts from the workspace root and fails when an owner has no matching agent tool. It normalizes an owner to a command token, maps the few names that differ from the tool id, and exempts the owners that are built in or not installable as a tool, each with a stated reason.
+The org integration registry in `org-ai-plugin` names one CLI owner per service. The retired `dev-setup` `tools.yaml` holds the agent tool set: the ids whose `consumers` list names `agent`. `just check-agent-tools` reads both sibling checkouts from the workspace root and fails when an owner has no matching agent tool. It normalizes an owner to a command token, maps the few names that differ from the tool id, and exempts the owners that are built in or not installable as a tool, each with a stated reason.
 
 The check is workspace-local, not a CI gate. CI checks out `maxstack` alone, so the two sibling repositories are absent there. Run it from the workspace root, or point it at a checkout with `--dev-setup <path>` and `--org-plugin <path>`.
 
 ## The Agent Vault
 
-The human and the agent reach a brokered service through a wrapper, never by putting a token in the environment. `dev-setup` owns the wrappers and the vault setup, and the vault is part of the AI stack an agent runs on.
+The human and the agent reach a brokered service through a wrapper, never by putting a token in the environment. The retired `dev-setup` archive owns the wrappers and the vault setup, and the vault is part of the AI stack an agent runs on.
 
 `with-secrets [--offline] [--require NAMES] <tool>` is the human path. Online by default, it reads the store and fails closed, and it puts the values a person's command needs into that one command's environment only. `--offline` uses the local fallback instead.
 
