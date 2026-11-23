@@ -1,18 +1,16 @@
 # Install and reload
 
-> **Requires PowerShell 7 or later (`pwsh`).** `scripts/Install-Workspace.ps1` declares `#requires -Version 7.0`. Windows PowerShell 5.1 (`powershell.exe`) stops at once with that requirement and does not run the installer. Every installer command in this document is written as `pwsh -File`.
+> **Requires PowerShell 7 or later (`pwsh`) on Linux.** `scripts/Install-Workspace.ps1` declares `#requires -Version 7.0`. Every installer command in this document is written as `pwsh -File`.
 
 ## Workspace discovery
 
 ## Platforms
 
-Windows is supported. The `test-macos` and `test-linux` CI jobs run the same fixture lifecycle for Claude, OpenCode, Copilot, Pi, Codex, Cursor, and Antigravity outside the required `test-node` aggregate. Neither uses `continue-on-error`, so a failure makes the workflow run fail. They verify installer output, strict status, runtime removal, and uninstall on hosted macOS and Linux; they do not exercise installed CLIs or their hooks. The Windows installer suite also runs the lifecycle fixture in `test-node-shard`. The Codex, Cursor, and Antigravity fixture declarations are opt-in test data; the shipped layers currently declare Claude, OpenCode, Copilot, and Pi only. macOS and Linux installs write only POSIX wrappers (`copilot.sh`, and `pi.sh` when Pi is selected); their lock records own those files and never record `.cmd` wrappers. Windows keeps writing and recording both `.cmd` and `.sh` wrappers. Claude plugin folders use directory symlinks on macOS and Linux and junctions on Windows when shared with OpenCode, with link-safe ownership, hashing, status, replacement, and removal. Windows lock records keep the `junction` kind; POSIX records `symlink`.
+Linux is the only supported platform (C5.6). The `test-linux` job in the `portable` workflow runs the POSIX installer fixture lifecycle for Claude, OpenCode, Copilot, Pi, Codex, Cursor, and Antigravity on `ubuntu-24.04` outside the required `test` and `test-node` jobs. It verifies installer output, strict status, runtime removal, and uninstall; it does not exercise installed CLIs or their hooks. The Codex, Cursor, and Antigravity fixture declarations are opt-in test data; the shipped layers currently declare Claude, OpenCode, Copilot, and Pi only. Installs write only POSIX wrappers (`copilot.sh`, and `pi.sh` when Pi is selected), and Claude plugin folders use directory symlinks, with link-safe ownership, hashing, status, replacement, and removal.
 
-PowerShell 7 is preinstalled on GitHub's hosted macOS runner. On a Mac without `pwsh`, install it with Microsoft's package or, if Homebrew is already installed, run `brew install powershell`. The Homebrew formula is community maintained.
+The installer resolves its target in this order: `-Workspace`, `MAXSTACK_WORKSPACE`, the nearest folder from the current directory upward that holds a `maxstack.settings.json` or `stack.lock.json` file, then the script's own `projects/repos/<repo>/scripts` or `projects/worktrees/<repo>/scripts` location. If none names a workspace, it stops and lists these four choices. It prints the resolved absolute path and origin on the first line of a successful run.
 
-The installer resolves its target in this order: `-Workspace`, `MAXSTACK_WORKSPACE`, the nearest folder from the current directory upward that holds a `maxstack.settings.json` or `stack.lock.json` file, then the script's own `projects\repos\<repo>\scripts` or `projects\worktrees\<repo>\scripts` location. If none names a workspace, it stops and lists these four choices. It prints the resolved absolute path and origin on the first line of a successful run.
-
-An explicit or environment target must already exist as a directory. An empty value, a missing folder, or a non-filesystem current location is an error, and none of them falls through to another source. Discovery never creates a folder, so `-Status` and `-Update -Check` cannot create one either. Relative explicit and environment paths resolve from the current directory. A marker must be a file, and only its name is checked. A junction or symbolic link keeps the path you gave, so the lock names the link; the folder it names is checked like any other folder. A `stack.lock.json` that is a symbolic link or a junction is refused by `-Remove` and `-Uninstall`, which would otherwise act through it in another folder. Replace it with a regular file first. A folder inside `.git`, `.claude\cache`, `projects\repos`, or `projects\worktrees` is never a workspace.
+An explicit or environment target must already exist as a directory. An empty value, a missing folder, or a non-filesystem current location is an error, and none of them falls through to another source. Discovery never creates a folder, so `-Status` and `-Update -Check` cannot create one either. Relative explicit and environment paths resolve from the current directory. A marker must be a file, and only its name is checked. A junction or symbolic link keeps the path you gave, so the lock names the link; the folder it names is checked like any other folder. A `stack.lock.json` that is a symbolic link or a junction is refused by `-Remove` and `-Uninstall`, which would otherwise act through it in another folder. Replace it with a regular file first. A folder inside `.git`, `.claude/cache`, `projects/repos`, or `projects/worktrees` is never a workspace.
 
 Device prefixes (`\\?\` and `\\.\`), UNC paths (`\\server\share`), 8.3 short names, and paths with control characters are refused by their text before any filesystem lookup. Control, format, and separator characters in a message are shown as `\uXXXX`, and a long value is cut with `...`. The full rules and an example are in [Workspace settings](features/settings.md#workspace-discovery).
 
@@ -29,7 +27,7 @@ New-Item -ItemType Directory -Force -Path (Join-Path $Workspace 'projects/repos'
 git clone https://github.com/simpsonm09-projects/org-ai-plugin.git (Join-Path $Workspace 'projects/repos/org-ai-plugin')
 git clone https://github.com/simpsonm09-projects/personal-ai-plugin.git (Join-Path $Workspace 'projects/repos/personal-ai-plugin')
 npm install --prefix (Join-Path $Workspace '.maxstack/npm') '@earendil-works/pi-coding-agent'
-$PiCommand = Join-Path $Workspace '.maxstack/npm/node_modules/.bin/pi.cmd'
+$PiCommand = Join-Path $Workspace '.maxstack/npm/node_modules/.bin/pi'
 
 pwsh -File scripts/Install-Workspace.ps1 -Workspace $Workspace
 pwsh -File scripts/Install-Workspace.ps1 -Workspace $Workspace -Apply
@@ -73,12 +71,10 @@ maxstack sets no model. The workspace `opencode.jsonc` has no `model` or `small_
 T3 Code hosts the agent sessions. It runs four plugin providers against the same workspace, and a fifth, Codex, that gets the workspace skills and instructions:
 
 - The OpenCode provider can reuse an already-running `opencode serve` across sessions. OpenCode reads the workspace `opencode.jsonc` and `.opencode` directory from the session directory upward.
-- The Claude provider runs Claude Code with `--plugin-dir` pointing at `<workspace>\.claude\plugins`. See [T3 setup](t3-setup.md).
-- The Copilot provider runs `<workspace>\.maxstack\bin\copilot.cmd`, which starts the Copilot CLI with the same plugin folders. See [T3 setup](t3-setup.md#copilot).
-- The Pi provider runs `<workspace>\.maxstack\bin\pi.cmd`, which starts Pi with the agent folder `<workspace>\.pi\agent`. See [T3 setup](t3-setup.md#pi-maxstack).
+- The Claude provider runs Claude Code with `--plugin-dir` pointing at `<workspace>/.claude/plugins`. See [T3 setup](t3-setup.md).
+- The Copilot provider runs `<workspace>/.maxstack/bin/copilot.sh`, which starts the Copilot CLI with the same plugin folders. See [T3 setup](t3-setup.md#copilot).
+- The Pi provider runs `<workspace>/.maxstack/bin/pi.sh`, which starts Pi with the agent folder `<workspace>/.pi/agent`. See [T3 setup](t3-setup.md#pi-maxstack).
 - The Codex provider reads the workspace skills and instructions when its launch arguments name the marker `stack.lock.json`. See [T3 setup](t3-setup.md#codex-maxstack).
-
-Ubuntu WSL can also run the OpenCode CLI. It reads the same workspace files through the drive mount corresponding to the Windows workspace path.
 
 ## Runtime and layer selection
 
@@ -119,15 +115,15 @@ The rules:
 
 What each runtime writes:
 
-- `claude`: `.claude\plugins`. A local layer is a junction to its OpenCode copy when `opencode` is selected too. Without `opencode` there is no copy to link to, so the layer's items are copied into the Claude folder instead.
-- `opencode`: `opencode.jsonc`, `.opencode\plugins`, and the agent profiles.
-- `copilot`: `.maxstack\bin\copilot.cmd` and `copilot.sh`.
-- `pi`: `.maxstack\bin\pi.cmd` and `pi.sh`, and `.pi\agent\settings.json`.
-- `cursor`: `.cursor\skills`, one folder per skill, and, when a selected layer has the Cursor gate hook, `.cursor\hooks.json`.
-- `antigravity`: `.agents\skills` and, when a selected layer has the Antigravity gate hook, `.agents\hooks.json`.
-- `codex`: `.agents\skills\<name>\`, one copy of each skill of each selected layer, in layer order. A skill is a folder with a `SKILL.md` whose frontmatter `name` is the folder name and whose `description` is set. Two layers cannot name a skill the same, even by case, and a skill that sets a `model` is refused. When a selected layer ships the Codex gate hook and its OpenCode copy is installed, maxstack also owns `.codex/config.toml` with the `PreToolUse` definition. Existing unowned files are kept. Edited owned files are kept; remove and uninstall delete only unchanged files. The lock records the hook hash for the Codex status check. The installer never reads or writes `CODEX_HOME`, user config, `auth.json`, or a model. The T3 instance uses the fixed marker argument `-c 'project_root_markers=["stack.lock.json"]'`.
+- `claude`: `.claude/plugins`. A local layer is a symbolic link to its OpenCode copy when `opencode` is selected too. Without `opencode` there is no copy to link to, so the layer's items are copied into the Claude folder instead.
+- `opencode`: `opencode.jsonc`, `.opencode/plugins`, and the agent profiles.
+- `copilot`: `.maxstack/bin/copilot.sh`.
+- `pi`: `.maxstack/bin/pi.sh` and `.pi/agent/settings.json`.
+- `cursor`: `.cursor/skills`, one folder per skill, and, when a selected layer has the Cursor gate hook, `.cursor/hooks.json`.
+- `antigravity`: `.agents/skills` and, when a selected layer has the Antigravity gate hook, `.agents/hooks.json`.
+- `codex`: `.agents/skills/<name>/`, one copy of each skill of each selected layer, in layer order. A skill is a folder with a `SKILL.md` whose frontmatter `name` is the folder name and whose `description` is set. Two layers cannot name a skill the same, even by case, and a skill that sets a `model` is refused. When a selected layer ships the Codex gate hook and its OpenCode copy is installed, maxstack also owns `.codex/config.toml` with the `PreToolUse` definition. Existing unowned files are kept. Edited owned files are kept; remove and uninstall delete only unchanged files. The lock records the hook hash for the Codex status check. The installer never reads or writes `CODEX_HOME`, user config, `auth.json`, or a model. The T3 instance uses the fixed marker argument `-c 'project_root_markers=["stack.lock.json"]'`.
 
-Cursor and Antigravity gate hooks follow the same ownership rule. When a selected layer ships `hooks/cursor-hooks.json` or `hooks/antigravity-hooks.json`, the installer writes `.cursor\hooks.json` or `.agents\hooks.json` and rewrites each `command` to run the adapter by its absolute path. The command runs the adapter from the installed OpenCode copy when OpenCode is selected, otherwise from the Claude plugin folder when Claude is, and otherwise from the layer folder, so a selection without OpenCode still gets a working hook. Existing unowned files are kept and named for hand installation, edited owned files are kept, and remove or uninstall delete only unchanged files. A live Cursor or Antigravity session has not been verified.
+Cursor and Antigravity gate hooks follow the same ownership rule. When a selected layer ships `hooks/cursor-hooks.json` or `hooks/antigravity-hooks.json`, the installer writes `.cursor/hooks.json` or `.agents/hooks.json` and rewrites each `command` to run the adapter by its absolute path. The command runs the adapter from the installed OpenCode copy when OpenCode is selected, otherwise from the Claude plugin folder when Claude is, and otherwise from the layer folder, so a selection without OpenCode still gets a working hook. Existing unowned files are kept and named for hand installation, edited owned files are kept, and remove or uninstall delete only unchanged files. A live Cursor or Antigravity session has not been verified.
 
 ## Workspace instructions
 
@@ -141,7 +137,7 @@ An edited generated file is reported and kept. Apply does not overwrite it. `-St
 
 The optional `t3.gatedInstances` and `t3.readOnlyInstances` lists write `.pstack/pstack-t3-instances.json`. Gated entries record the selected layer names and whether their sources include the gate hook. Read-only entries are cheap helpers for reviews, research, and explanation on harnesses without our layers or gate. pstack refuses them for roles whose helpers can write files, commit, push, or open pull requests. The ids are per-machine settings and maxstack supplies no defaults. The file and a created `.pstack` folder are recorded in `stack.lock.json`. An edited file is kept, and an existing file not recorded as maxstack-owned is kept without being read or overwritten. `-Remove`, `-Uninstall`, and empty lists delete only an unchanged file that maxstack recorded. The installer never touches the model sheet or other files in `.pstack`.
 
-The pinned pstack cache under `.claude\cache` is the source every runtime copies from, so each layer that installs anything writes it, whichever runtime it serves. The lock records each runtime a layer does not install as `enabled: false`. For `copilot` and `pi` the reason is `not selected`.
+The pinned pstack cache under `.claude/cache` is the source every runtime copies from, so each layer that installs anything writes it, whichever runtime it serves. The lock records each runtime a layer does not install as `enabled: false`. For `copilot` and `pi` the reason is `not selected`.
 
 The lock is replaced whole. The installer writes the new text to `stack.lock.json.new` beside it and then replaces the lock, so an interrupted run cannot leave a partial lock. The lock it replaced is kept as `stack.lock.json.bak`.
 
@@ -151,28 +147,28 @@ An unselected runtime's files are left alone. An apply does not write, remove, o
 
 ## Install and reload
 
-PStack is not checked out in the workspace. The installer fetches the `plugins/pstack` folder of the fork at the commit in `pstack.lock.json`, into `.claude\cache\pstack`, and checks that commit out. A cache already at the commit is reused without a network call. The org and personal layers are read from their checkouts under `projects\repos`.
+PStack is not checked out in the workspace. The installer fetches the `plugins/pstack` folder of the fork at the commit in `pstack.lock.json`, into `.claude/cache/pstack`, and checks that commit out. A cache already at the commit is reused without a network call. The org and personal layers are read from their checkouts under `projects/repos`.
 
 ```powershell
 pwsh -File scripts/Install-Workspace.ps1 -Apply
 ```
 
-After an install, restart the running OpenCode server, then start a new session in T3. T3 can reuse a long-lived server across sessions, and that server does not reliably reload plugins or skills after reinstall. Claude Code reads its `.claude\plugins` folder when a session starts. Copilot reads its plugin folders when it starts.
+After an install, restart the running OpenCode server, then start a new session in T3. T3 can reuse a long-lived server across sessions, and that server does not reliably reload plugins or skills after reinstall. Claude Code reads its `.claude/plugins` folder when a session starts. Copilot reads its plugin folders when it starts.
 
 Check the installed workspace:
 
-```powershell
-pwsh -File scripts/verify-opencode-workspace.ps1
+```bash
 python scripts/verify-workspace-install.py
+scripts/verify-workspace-skill.sh <provider/model>
 ```
 
-`verify-opencode-workspace.ps1` runs `opencode debug config` and `opencode debug agents` from the workspace. OpenCode 2.x debug commands start or reuse its managed background service; this check makes no model call. Each command has a 60-second limit; a call that runs past it fails the check and names the command. Plugin loading needs a model call, so `scripts/verify-workspace-skill.ps1 -Model <provider/model>` runs a bounded OpenCode session that loads a skill. It has a 180-second limit, and it needs a model because the workspace names none. `scripts/verify-workspace-skill.sh` takes the model as its second argument and the limit as its third.
+Plugin loading needs a model call, so `scripts/verify-workspace-skill.sh` runs a bounded OpenCode session that loads a skill. It has a 180-second limit, and it needs a model because the workspace names none. The model is its second argument and the limit is its third.
 
 `verify-workspace-install.py` checks each runtime the lock records: the Claude folders, the OpenCode folders and their entries, the agent profiles, the `plugin` entries in `opencode.jsonc`, and the Copilot wrappers against their recorded hashes.
 
 ## Claude Code
 
-The same install also builds `.claude/plugins` at the workspace root: one child folder per Claude plugin. The org and personal folders are directory links to the installed OpenCode copies, using junctions on Windows and symbolic links on macOS. Pstack is a copy of its pinned folder in the fork. Without the `opencode` runtime there is no OpenCode copy, so a local folder is a copy of its items instead. Claude Code reads the folder when a session starts, so a new session is enough. A T3 Claude provider instance passes `--plugin-dir <workspace>\.claude\plugins`. See [T3 setup](t3-setup.md).
+The same install also builds `.claude/plugins` at the workspace root: one child folder per Claude plugin. The org and personal folders are symbolic links to the installed OpenCode copies. Pstack is a copy of its pinned folder in the fork. Without the `opencode` runtime there is no OpenCode copy, so a local folder is a copy of its items instead. Claude Code reads the folder when a session starts, so a new session is enough. A T3 Claude provider instance passes `--plugin-dir <workspace>/.claude/plugins`. See [T3 setup](t3-setup.md).
 
 ## Codex
 
@@ -180,21 +176,21 @@ With `codex` or `antigravity` selected, the installer copies each selected layer
 
 ## Copilot CLI
 
-`Install-Workspace.ps1` writes two wrappers into `.maxstack\bin`: `copilot.cmd` for Windows and `copilot.sh` for POSIX shells. Each runs the Copilot CLI with one `--plugin-dir` for each layer that lists the `copilot` runtime, in layer order, then passes its arguments through. The plugin folders are the `.claude\plugins` folders above; no second copy is made.
+`Install-Workspace.ps1` writes `copilot.sh` into `.maxstack/bin`. It runs the Copilot CLI with one `--plugin-dir` for each layer that lists the `copilot` runtime, in layer order, then passes its arguments through. The plugin folders are the `.claude/plugins` folders above; no second copy is made.
 
-The installer finds the Copilot executable with `Get-Command copilot`. It never uses a match inside `.maxstack\bin`. The `.cmd` names that executable by its absolute path, so a later move of Copilot needs an apply. If Copilot is not found on this run, the installer keeps the two wrappers the lock records, as they are on disk, and warns that they were kept. It never removes them only because Copilot is missing: a wrapper goes only when no layer declares `copilot`, or when the runtime is removed with `-Remove`, and the lock records it with its hash. With no recorded wrappers, it skips both with a message. Either way it still installs everything else. Install Copilot, then run the installer with `-Apply` again. The wrappers run the Claude plugin folders, so `copilot` needs `claude` selected.
+The installer finds the Copilot executable with `Get-Command copilot`. It never uses a match inside `.maxstack/bin`. The wrapper resolves the executable from `PATH` at run time. If Copilot is not found on this run, the installer keeps the wrapper the lock records, as it is on disk, and warns that it was kept. It never removes it only because Copilot is missing: a wrapper goes only when no layer declares `copilot`, or when the runtime is removed with `-Remove`, and the lock records it with its hash. With no recorded wrapper, it skips it with a message. Either way it still installs everything else. Install Copilot, then run the installer with `-Apply` again. The wrapper runs the Claude plugin folders, so `copilot` needs `claude` selected.
 
 To test the wrapper without an install, pass a different executable: `-CopilotCommand <path>`.
 
 ## Pi
 
-`Install-Workspace.ps1` writes `.maxstack\bin\pi.cmd` and `pi.sh`, and `.pi\agent\settings.json`. The wrappers set `PI_CODING_AGENT_DIR` to `.pi\agent`. At install time, `-PiCommand <path>` chooses the Pi CLI to wrap, beside `-CopilotCommand <path>` for Copilot. Without it, the installer checks the workspace Pi copy, `.maxstack\npm\node_modules\.bin\pi.cmd` (`pi` on POSIX), then the first `pi` on `PATH` outside `.maxstack\bin`. `MAXSTACK_PI_BIN` is read by the wrapper at run time; the installer does not read it. `pi.cmd` runs the Pi found at install time, and `pi.sh` runs the workspace copy when that was selected; with a PATH Pi, `pi.sh` resolves PATH at run time. The wrappers bake absolute paths to the agent folder and executable. After the workspace or Pi moves, rerun the installer. If Pi is missing, the installer prints a final incomplete-runtime summary; default exit remains 0, and `-Strict` exits 1. A wrapper is removed only when the lock records it, its hash matches, and no layer declares `pi`. Settings hold `packages` and `skills` lists; the installer owns only the entries it wrote under those keys. User values such as `defaultProvider` or `defaultModel` stay, and maxstack writes no model or provider. A layer is a Pi package when its root `package.json` has a `pi` key. For a local source, Pi uses that repository-root package; skills still point to the installed Claude plugin folders. Pi lists those folders, so `pi` needs `claude` selected. See [T3 setup](t3-setup.md#pi-maxstack).
+`Install-Workspace.ps1` writes `.maxstack/bin/pi.sh` and `.pi/agent/settings.json`. The wrapper sets `PI_CODING_AGENT_DIR` to `.pi/agent`. At install time, `-PiCommand <path>` chooses the Pi CLI to wrap, beside `-CopilotCommand <path>` for Copilot. Without it, the installer checks the workspace Pi copy, `.maxstack/npm/node_modules/.bin/pi`, then the first `pi` on `PATH` outside `.maxstack/bin`. `MAXSTACK_PI_BIN` is read by the wrapper at run time; the installer does not read it. `pi.sh` runs the workspace copy when that was selected; with a PATH Pi, `pi.sh` resolves PATH at run time. The wrapper bakes absolute paths to the agent folder and executable. After the workspace or Pi moves, rerun the installer. If Pi is missing, the installer prints a final incomplete-runtime summary; default exit remains 0, and `-Strict` exits 1. A wrapper is removed only when the lock records it, its hash matches, and no layer declares `pi`. Settings hold `packages` and `skills` lists; the installer owns only the entries it wrote under those keys. User values such as `defaultProvider` or `defaultModel` stay, and maxstack writes no model or provider. A layer is a Pi package when its root `package.json` has a `pi` key. For a local source, Pi uses that repository-root package; skills still point to the installed Claude plugin folders. Pi lists those folders, so `pi` needs `claude` selected. See [T3 setup](t3-setup.md#pi-maxstack).
 
 ### Update Pi
 
 When the selected Pi is the workspace managed copy under `.maxstack/npm`, the generated wrapper handles
-`pi update --self` by asking npm for `@earendil-works/pi-coding-agent@latest` with lifecycle scripts disabled. On
-Windows, `pi.cmd` dispatches this command to the installer-owned Node helper in `.maxstack/bin`; Node validates the
+`pi update --self` by asking npm for `@earendil-works/pi-coding-agent@latest` with lifecycle scripts disabled. The
+`pi.sh` wrapper dispatches this command to the installer-owned Node helper in `.maxstack/bin`; Node validates the
 complete argument vector before starting npm. It
 refuses the command if the managed package has been removed, `MAXSTACK_PI_BIN` overrides the selected Pi, or any extra
 argument (including an empty argument) follows `--self`. When the selected Pi is external or global, the wrapper names
@@ -229,7 +225,7 @@ pwsh -File scripts/Install-Workspace.ps1
 
 Audit and `-Status` compare OpenCode plugin folders with the planned tree, so a changed layer source reports the same drift in both modes.
 
-A layer that stops naming a runtime leaves its folder behind. `-Apply` removes an OpenCode folder that no layer names only when the previous `stack.lock.json` recorded it, so the installer made it. It also removes the folder of the retired `pstack-opencode` port on every apply. Any other unnamed folder is reported as stale and kept. The same cleanup applies to `.claude\plugins`: `-Apply` removes a child that no layer declares, and audit reports it as stale.
+A layer that stops naming a runtime leaves its folder behind. `-Apply` removes an OpenCode folder that no layer names only when the previous `stack.lock.json` recorded it, so the installer made it. It also removes the folder of the retired `pstack-opencode` port on every apply. Any other unnamed folder is reported as stale and kept. The same cleanup applies to `.claude/plugins`: `-Apply` removes a child that no layer declares, and audit reports it as stale.
 
 ## Layer sources
 
@@ -346,7 +342,7 @@ Without `-Apply`, `-Update` prints the report and writes nothing. That is alread
   - Role `user`: a backup the installer did not write. No removal restores or deletes it.
   A lock from before roles names no role. Its plain `X.bak` is the original, and a numbered copy has no role and is never restored.
 
-The `claude` layer record keeps the link kind as `junction` on Windows and `symlink` on macOS. A prior Windows `junction` record remains readable. The top-level `owned` record stays `kind: link` on both platforms, so existing Windows ownership records are unchanged. Link targets are compared with the platform path rules. Hashing lists a link and its target without walking through it, and removal deletes the link itself only when it still points at the recorded target.
+The `claude` layer record keeps the link kind as `symlink`. Link targets are compared with the platform path rules. Hashing lists a link and its target without walking through it, and removal deletes the link itself only when it still points at the recorded target.
 
 A `json-entries` record for a key the installer created in a settings file that already existed carries `createdKey: true`. The top-level `createdDirs` lists each directory an apply created, and `createdFiles` each file it created: `opencode.jsonc` and `.pi\agent\settings.json` when the apply created them, and not when they already existed. Both are sorted, and both lists name only what was not there before the first apply. The `pi` section records `settingsSha256`, the SHA-256 the last apply wrote to the Pi settings, so a backup can be put back only while the file still holds it.
 
@@ -357,7 +353,7 @@ The rule for files the installer generates, stated once. An ownership record cov
 ```json
 "ownedSchema": 2,
 "owned": [
-  { "path": ".maxstack/bin/copilot.cmd", "kind": "file", "sha256": "…", "runtime": "copilot", "layers": [] },
+  { "path": ".maxstack/bin/copilot.sh", "kind": "file", "sha256": "…", "runtime": "copilot", "layers": [] },
   { "path": ".claude/cache/pstack", "kind": "dir", "sha256": "…", "runtime": null, "layers": ["pstack"] },
   { "path": ".pi/agent/settings.json", "kind": "json-entries", "key": "packages", "entries": ["../../.claude/cache/pstack"], "runtime": "pi", "layers": ["pstack"] }
 ]
@@ -411,7 +407,7 @@ The rules:
 
 - `-Remove` needs `-Runtimes` or `-Layers`, and `-Uninstall` takes neither. The two switches exclude each other, and neither takes `-Status`. `-Strict` exits 1 when a removal skips anything, in a dry run or an apply.
 - `-Remove` needs a lock with `ownedSchema: 2` and an `owned` list, because it picks each record by its runtime and layers. `-Uninstall` needs only an `owned` list, so it also works from an `ownedSchema: 1` lock. A lock with no `owned` list is refused with `it has no owned list`, and a lock at another schema version with `its ownedSchema is N`. Each refusal says to run `Install-Workspace.ps1 -Apply once` and writes nothing. A workspace with no lock but some of the installer's outputs is refused the same way. A workspace with no lock and none of them has nothing to remove, and says so.
-- `-Remove` takes each name out of the recorded selection. A name that is not selected removes nothing, and the run says so. It then applies the remaining selection, so a claude junction whose OpenCode copy was removed becomes a copy, and it deletes the records the remaining selection no longer produces.
+- `-Remove` takes each name out of the recorded selection. A name that is not selected removes nothing, and the run says so. It then applies the remaining selection, so a Claude symbolic link whose OpenCode copy was removed becomes a copy, and it deletes the records the remaining selection no longer produces.
 - `-Remove` refuses a removal that leaves `copilot` or `pi` selected without `claude`, and one that leaves no runtime or no layer. Name each runtime that needs it in the same command, for example `-Remove -Runtimes claude,copilot,pi`, or use `-Uninstall`.
 - `-Uninstall` deletes the lock files (`stack.lock.json`, `.bak`, and `.new`) only when nothing was skipped. Otherwise it prints `N items skipped; lock kept; rerun -Uninstall -Apply to retry.` and keeps the lock, with only the records still owed. It exits 0 in that case, and 1 with `-Strict`. `-Remove -Apply` prints the matching line, `N items skipped; lock kept; rerun -Remove -Apply to retry.` When a removal that finishes keeps files on disk, its final line names them, as `Uninstalled: the lock files are removed. Kept on disk, not restored or deleted: <paths>.` Without kept files it says that every recorded path was removed.
 - Each run ends with a `Summary:` line that counts each state.
@@ -456,7 +452,7 @@ After a partial uninstall the lock still describes the selection, so `verify-wor
 
 ## A legacy global install
 
-The workspace bundle is the only PStack install. If an older global install is ever found, remove it by hand, on Windows under `%USERPROFILE%` and on WSL under `$HOME`. `scripts/verify-workspace-install.py` reports what remains. It checks these paths:
+The workspace bundle is the only PStack install. If an older global install is ever found, remove it by hand under `$HOME`. `scripts/verify-workspace-install.py` reports what remains. It checks these paths:
 
 - `.agents/skills` holds no PStack skill (`poteto-mode` or a `principle-*` folder). Other tools, such as the Cursor CLI, install their own skills there, and those are left alone.
 - `.config/opencode/AGENTS.md` is absent.

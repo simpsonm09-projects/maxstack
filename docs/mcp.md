@@ -45,7 +45,7 @@ The live connection state belongs to the OpenCode server that runs the session. 
 - `grep_app`, `playwright`, and `chrome-devtools` were the last servers and are now removed. Code search moved to `gh search code` plus the local `grep` tool; Playwright and Chrome DevTools moved to their CLIs. The composed default set is empty.
 - `context7`, `github`, `postman`, and `sequential-thinking` were removed in favor of CLI tools. `npx ctx7`, `gh`, and `postman` cover their jobs with far fewer tools in context. `sequential-thinking` added no capability for a reasoning model.
 - `fetch` was removed. `@modelcontextprotocol/server-fetch` does not exist on npm, and OpenCode already has a built-in `webfetch` tool, so the server was redundant.
-- `sqlite` was removed. It ran `docker run mcp/sqlite`, and Docker is not on the Windows PATH on this workstation; the WSL Docker daemon is not group-enabled, so it would need an interactive `sudo`.
+- `sqlite` was removed. It ran `docker run mcp/sqlite`, but Docker is not installed on this workstation, and a daemon would need an interactive `sudo` to enable the group.
 
 ## Turn one on per project
 

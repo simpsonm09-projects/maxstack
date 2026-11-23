@@ -933,6 +933,7 @@ export function sourceBlockIn(lock, name) {
 // Review items N1 to N10 of c2d0d54. Each test names the item it covers, and each fails before its fix.
 // The 8.3 name of an existing folder, as the filesystem reports it, or null when the folder cannot be read.
 export const shortPathOf = (path) => {
+  if (process.platform !== 'win32' || !shell) return null;
   const script = `(New-Object -ComObject Scripting.FileSystemObject).GetFolder('${path.replaceAll("'", "''")}').ShortPath`;
   const run = spawnSync(shell, ['-NoProfile', '-NonInteractive', '-Command', script], {
     windowsHide: true,
@@ -941,7 +942,7 @@ export const shortPathOf = (path) => {
   return run.status === 0 ? run.stdout.trim() : null;
 };
 
-// Whether this volume generates 8.3 names for a new folder. A volume with generation off skips the 8.3 tests with that reason.
+// Whether this volume generates 8.3 names for a new folder. Only Windows has 8.3 names; elsewhere the tests skip.
 export const EXISTING_LONG_FOLDER = process.env.ProgramFiles ?? 'C:\\Program Files';
 
 export const EXISTING_SHORT_FOLDER = shortPathOf(EXISTING_LONG_FOLDER);

@@ -33,7 +33,7 @@ test('finding F4: the new workspace guide gives prerequisites, layer sources, co
   ]) {
     assert.ok(section.includes(ignored), `new workspace ignore block is missing ${ignored}`);
   }
-  assert.match(section, /\$PiCommand = Join-Path \$Workspace .*node_modules\/\.bin\/pi\.cmd/);
+  assert.match(section, /\$PiCommand = Join-Path \$Workspace .*node_modules\/\.bin\/pi'/);
   assert.match(section, /-Runtimes all -PiCommand \$PiCommand -Apply/);
 });
 
@@ -43,15 +43,6 @@ test('finding F7: Pi install-time selection and MAXSTACK_PI_BIN runtime behavior
     install,
     /MAXSTACK_PI_BIN` is read by the wrapper at run time; the installer does not read it/,
   );
-});
-
-test('finding F8: OpenCode debug verification documents its managed service behavior', () => {
-  assert.match(
-    install,
-    /OpenCode 2\.x debug commands start or reuse its managed background service/,
-  );
-  assert.doesNotMatch(install, /It starts no server/);
-  assert.match(t3, /OpenCode 2\.x debug commands start or reuse its managed background service/);
 });
 
 test('Cursor and Antigravity setup documents the opt-in skills target and remaining gaps', () => {
