@@ -9,7 +9,7 @@ for the branch model and the protection rules.
 
 ## What it does
 
-`maxstack` owns AI composition for the `<workspace>` workspace. It holds the workspace config fragment, the ordered layer manifest, and the installer. `dev-setup` owns the machine and the human tool set, including a self-hosted Infisical Agent Vault that brokers service credentials for the agent. A wrapper is the entry point: `with-secrets [--require NAMES] <tool>` for the human path, and `with-vault --role human <tool>` or `with-vault --role agent <tool>` for the vault path. See [`docs/relationship.md`](docs/relationship.md).
+`maxstack` owns AI composition for the `<workspace>` workspace. It holds the workspace config fragment, the ordered layer manifest, and the installer. The `sakuragaoka-homelab` machine repositories own the machine and the human tool set. The retired `dev-setup` archive documents the self-hosted Infisical Agent Vault that brokers service credentials for the agent. A wrapper is the entry point: `with-secrets [--require NAMES] <tool>` for the human path, and `with-vault --role human <tool>` or `with-vault --role agent <tool>` for the vault path. See [`docs/relationship.md`](docs/relationship.md).
 
 PStack comes from one source: the `plugins/pstack` folder of [pstack-max, our fork of pstack-claude](https://github.com/simpsonm09/pstack-max), at the commit in [`pstack.lock.json`](pstack.lock.json). `layers.json` lists it once, with its runtimes. The installer builds each runtime from that pin:
 
@@ -68,6 +68,6 @@ MIT. See [`LICENSE`](LICENSE).
 - [`simpsonm09/pstack-max`](https://github.com/simpsonm09/pstack-max) (fork) owns the PStack plugin in `plugins/pstack`, for all four runtimes.
 - [`org-ai-plugin`](https://github.com/simpsonm09-projects/org-ai-plugin) owns the shared MCP servers and skills.
 - [`personal-ai-plugin`](https://github.com/simpsonm09-projects/personal-ai-plugin) owns the personal MCP servers and skills.
-- [`dev-setup`](https://github.com/simpsonm09-projects/dev-setup) owns the machine and app setup.
+- The [`sakuragaoka-homelab`](https://github.com/sakuragaoka-homelab) machine repositories own the machine and app setup; [`dev-setup`](https://github.com/simpsonm09-projects/dev-setup) is the retired archive.
 - [`repo-standard`](https://github.com/simpsonm09-projects/repo-standard) owns the shared CI, linting, security, and governance.
 - [`repo-template`](https://github.com/simpsonm09-projects/repo-template) is the generated-repo starting point.
