@@ -69,7 +69,7 @@ function skillMarkdown(
 
 // A local layer checkout. Its skills map a folder name to the SKILL.md text. The Claude manifest names the layer, and the
 // node_modules tree stops the installer from running npm. With hooks, the layer ships the two files that make a Codex
-// gate hook, so the opencode copy under .opencode/plugins carries them.
+// hook, so the opencode copy under .opencode/plugins carries them.
 function writeLocalLayer(workspace, name, skills, { hooks = false, rootOverride = null } = {}) {
   const root = rootOverride ?? join(workspace, LAYER_PATH[name]);
   const files = ['index.ts', 'node_modules', 'package.json', 'skills', '.claude-plugin'];
@@ -107,7 +107,7 @@ function buildContext({
 }
 
 // A workspace under the context. Its folder is named simpsonm09 in every workspace, so two can compare by their text.
-// hooks maps a layer name to true to give that layer a Codex gate hook in its installed copy.
+// hooks maps a layer name to true to give that layer a Codex hook in its installed copy.
 function addWorkspace(ctx, name, { skills = ctx.skills, hooks = {} } = {}) {
   const workspace = join(ctx.base, name, 'simpsonm09');
   mkdirSync(workspace, { recursive: true });
@@ -824,7 +824,7 @@ withContext(
       readFileSync(join(ctx.workspace, '.codex', 'config.toml'), 'utf8'),
       'theme = "dark"\n',
     );
-    assert.match(out, /exists and was not written by maxstack; add the Codex gate hook by hand/);
+    assert.match(out, /exists and was not written by maxstack; add the Codex hook by hand/);
     assert.ok(!readLock(ctx).owned.some((item) => item.path === '.codex/config.toml'));
   },
 );
@@ -871,7 +871,7 @@ withContext('-Remove codex removes an unchanged generated Codex config', (shared
   assert.equal(lstatSafe(join(ctx.workspace, '.codex', 'config.toml')), null);
 });
 
-withContext('removing the gate hook removes an unchanged generated Codex config', (shared) => {
+withContext('removing the hook removes an unchanged generated Codex config', (shared) => {
   const ctx = addWorkspace(shared, 'gate-removed', { hooks: { [ORG]: true } });
   mustRun(ctx, ['-Runtimes', 'opencode,codex'], { env: envWithFakeCodex(shared.base) });
   writeLocalLayer(ctx.workspace, ORG, ctx.skills[ORG], { hooks: false });
@@ -892,7 +892,7 @@ withContext('uninstall removes an unchanged generated Codex config', (shared) =>
   assert.equal(lstatSafe(join(ctx.workspace, '.codex', 'config.toml')), null);
 });
 
-withContext('codex without an installed gate hook prints the fixed marker line', (shared) => {
+withContext('codex without an installed hook prints the fixed marker line', (shared) => {
   const ctx = addWorkspace(shared, 'gate-codex-only', { hooks: { [ORG]: true } });
   const run = runInstaller(shell, ctx, ['-Runtimes', 'codex'], {
     env: envWithFakeCodex(shared.base),
@@ -914,7 +914,7 @@ withContext(
     });
     assert.equal(run.status, 0, plainOutput(run));
     const out = plainOutput(run);
-    assert.match(out, /\.codex\/config\.toml holds the gate hook/);
+    assert.match(out, /\.codex\/config\.toml holds the hook/);
     assert.doesNotMatch(out, /Run -Apply to write \.codex\/config\.toml/);
     assert.doesNotMatch(out, /one-time step/);
   },

@@ -834,9 +834,6 @@ withWorkspace(
       'folders in layer order',
     );
 
-    const env = lines.indexOf('set "AGENT_ACCESS_COPILOT_ASK=allow"');
-    assert.ok(env >= 0, 'the switch is set');
-    assert.ok(env < lines.indexOf(pluginLines[0]), 'the switch is set before the executable runs');
     assert.ok(
       pluginLines[0].includes(`"${ctx.fakeCopilot}"`),
       'the wrapper names the absolute executable',
@@ -867,7 +864,6 @@ withWorkspace(
       args,
       `ARGS=--plugin-dir "${join(plugins, 'pstack')}" --plugin-dir "${join(plugins, 'org-ai-plugin')}" --plugin-dir "${join(plugins, 'personal-ai-plugin')}" --foo "a b"`,
     );
-    assert.match(run.stdout, /ASK=allow/);
   },
   {},
 );
@@ -889,7 +885,6 @@ withWorkspaceNeeding(
     writeFileSync(join(orgLayer, 'workspace.md'), 'shell projection sentinel\n');
     mustApply(ctx);
     const sh = readFileSync(join(ctx.workspace, '.maxstack', 'bin', 'copilot.sh'), 'utf8');
-    assert.match(sh, /^export AGENT_ACCESS_COPILOT_ASK=allow$/m, 'the script sets the switch');
     assert.match(
       sh,
       /exec copilot --plugin-dir "[^"]*\/\.claude\/plugins\/pstack" --plugin-dir "[^"]*\/org-ai-plugin" --plugin-dir "[^"]*\/personal-ai-plugin" "\$@"$/m,
@@ -899,7 +894,7 @@ withWorkspaceNeeding(
     mkdirSync(fakeBin);
     writeFileSync(
       join(fakeBin, 'copilot'),
-      '#!/bin/sh\nprintf "ASK=%s\\n" "$AGENT_ACCESS_COPILOT_ASK"\nprintf "INSTRUCTIONS=%s\\n" "$COPILOT_CUSTOM_INSTRUCTIONS_DIRS"\nfor arg in "$@"; do printf "ARG=%s\\n" "$arg"; done\n',
+      '#!/bin/sh\nprintf "INSTRUCTIONS=%s\\n" "$COPILOT_CUSTOM_INSTRUCTIONS_DIRS"\nfor arg in "$@"; do printf "ARG=%s\\n" "$arg"; done\n',
     );
     chmodSync(join(fakeBin, 'copilot'), 0o755);
     const env = { ...process.env, COPILOT_CUSTOM_INSTRUCTIONS_DIRS: 'existing-dir' };
@@ -911,7 +906,6 @@ withWorkspaceNeeding(
       { windowsHide: true, encoding: 'utf8', env },
     );
     assert.equal(run.status, 0, `${run.stdout}\n${run.stderr}`);
-    assert.match(run.stdout, /ASK=allow/);
     assert.match(
       run.stdout,
       new RegExp(
@@ -1147,7 +1141,7 @@ withWorkspace(
 );
 
 withWorkspace(
-  'pi.cmd sets the agent folder and the ask switch, runs the Pi CLI with the arguments, and honours MAXSTACK_PI_BIN',
+  'pi.cmd sets the agent folder, runs the Pi CLI with the arguments, and honours MAXSTACK_PI_BIN',
   (ctx) => {
     mustApply(ctx);
     const wrapper = join(ctx.workspace, '.maxstack', 'bin', 'pi.cmd');
@@ -1157,7 +1151,6 @@ withWorkspace(
       text.includes(`set "PI_CODING_AGENT_DIR=${join(ctx.workspace, '.pi', 'agent')}"`),
       'the agent folder is not set',
     );
-    assert.ok(text.includes('set "AGENT_ACCESS_PI_ASK=allow"'), 'the ask switch is not set');
     assert.ok(
       text.includes(`set "PI_BIN=${ctx.fakePi}"`),
       'the wrapper does not name the Pi CLI found at install time',
@@ -1170,7 +1163,6 @@ withWorkspace(
     });
     assert.equal(run.status, 0, `${run.stdout}\n${run.stderr}`);
     assert.ok(run.stdout.includes(`AGENT_DIR=${join(ctx.workspace, '.pi', 'agent')}`), run.stdout);
-    assert.match(run.stdout, /ASK=allow/);
     assert.match(run.stdout, /ARGS=--mode rpc "a b"/);
 
     const other = join(ctx.base, 'other-pi.cmd');
@@ -1245,21 +1237,20 @@ test(
 withWorkspaceNeeding(
   'bash',
   findBash(),
-  'pi.sh runs pi from PATH with the agent folder and the ask switch, and honours MAXSTACK_PI_BIN',
+  'pi.sh runs pi from PATH with the agent folder, and honours MAXSTACK_PI_BIN',
   (ctx) => {
     const bash = findBash();
     mustApply(ctx);
     const sh = readFileSync(join(ctx.workspace, '.maxstack', 'bin', 'pi.sh'), 'utf8');
     assert.doesNotMatch(sh, /\r/, 'the script has LF endings');
     assert.match(sh, /^export PI_CODING_AGENT_DIR="[^"]*\/\.pi\/agent"$/m);
-    assert.match(sh, /^export AGENT_ACCESS_PI_ASK=allow$/m);
     assert.match(sh, /^exec "\$pi_bin" "\$@"$/m);
 
     const fakeBin = join(ctx.base, 'pi-fake-bin');
     mkdirSync(fakeBin);
     writeFileSync(
       join(fakeBin, 'pi'),
-      '#!/bin/sh\nprintf "AGENT=%s\\n" "$PI_CODING_AGENT_DIR"\nprintf "ASK=%s\\n" "$AGENT_ACCESS_PI_ASK"\nfor arg in "$@"; do printf "ARG=%s\\n" "$arg"; done\n',
+      '#!/bin/sh\nprintf "AGENT=%s\\n" "$PI_CODING_AGENT_DIR"\nfor arg in "$@"; do printf "ARG=%s\\n" "$arg"; done\n',
     );
     chmodSync(join(fakeBin, 'pi'), 0o755);
     const env = { ...process.env };
@@ -1275,7 +1266,6 @@ withWorkspaceNeeding(
     });
     assert.equal(run.status, 0, `${run.stdout}\n${run.stderr}`);
     assert.ok(run.stdout.includes(`AGENT=${agentDir}`), run.stdout);
-    assert.match(run.stdout, /ASK=allow/);
     assert.match(
       run.stdout,
       /ARG=--mode\nARG=rpc\nARG=a b/,

@@ -9,12 +9,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
-import {
-  checkDeniedNotRun,
-  checkPstackExtensionLoaded,
-  GATE_DENIAL_PREFIX,
-  skillsInSystemPrompt,
-} from './lib/pi-harness-checks.mjs';
+import { checkPstackExtensionLoaded, skillsInSystemPrompt } from './lib/pi-harness-checks.mjs';
 import { piEnvironment, piLaunch } from './lib/pi-harness-session.mjs';
 import {
   pickLayerSkills,
@@ -24,7 +19,7 @@ import {
   SetupError,
   snapshotTree,
 } from './lib/pi-harness-workspace.mjs';
-import { decideReply, PLAIN_TEXT, startStubModelServer } from './lib/stub-model-server.mjs';
+import { PLAIN_TEXT, startStubModelServer } from './lib/stub-model-server.mjs';
 import { runPiHarness } from './verify-pi-harness.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -121,36 +116,6 @@ test('the stub streams a reply as server-sent events ending in DONE', async () =
   }
 });
 
-test('the stub asks for the denied command once, then answers after the tool result', () => {
-  const denyCommand = 'node "launcher.mjs" smoke';
-  const first = decideReply(
-    {
-      messages: [{ role: 'user', content: 'PI_SMOKE_DENY go' }],
-      tools: [{ function: { name: 'bash', parameters: { required: ['command'] } } }],
-    },
-    { denyCommand },
-  );
-  assert.deepEqual(first.call, { name: 'bash', args: { command: denyCommand } });
-  const second = decideReply(
-    {
-      messages: [
-        { role: 'user', content: 'PI_SMOKE_DENY go' },
-        { role: 'tool', content: 'x' },
-      ],
-    },
-    { denyCommand },
-  );
-  assert.equal(second.text, 'PI_SMOKE_AFTER_TOOL');
-});
-
-test('the stub refuses a denied-command request when Pi advertises no bash tool', () => {
-  const reply = decideReply(
-    { messages: [{ role: 'user', content: 'PI_SMOKE_DENY go' }], tools: [] },
-    { denyCommand: 'x' },
-  );
-  assert.equal(reply.text, 'PI_SMOKE_NO_BASH_TOOL');
-});
-
 test('the stub returns 404 for another path and 400 for a body that is not JSON', async () => {
   const stub = await startStubModelServer();
   try {
@@ -177,12 +142,6 @@ test('the skill list in a system prompt yields each name and its location', () =
   assert.deepEqual(skillsInSystemPrompt(prompt), [
     { name: 'dev-tools', location: 'C:/fixture/plugins/pers/skills/dev-tools/SKILL.md' },
   ]);
-});
-
-test('the denied-command check fails when Pi made no bash call, so nothing was tested', () => {
-  const check = checkDeniedNotRun(join(tempDir('pi-marker-'), 'absent.marker'), { events: [] });
-  assert.equal(check.ok, false);
-  assert.match(check.detail, /no bash call/);
 });
 
 test('the workspace is the explicit path, then MAXSTACK_WORKSPACE, then a marker, then the layout', () => {
@@ -259,7 +218,6 @@ test('the Pi environment keeps only what Pi needs and points the agent at the sc
   assert.equal(env.OPENAI_API_KEY, undefined);
   assert.equal(env.GH_TOKEN, undefined);
   assert.equal(env.PATH, '/bin');
-  assert.equal(env.AGENT_ACCESS_PI_ASK, 'allow');
   assert.equal(env.PI_CODING_AGENT_DIR, join(scratch, 'agent'));
   assert.equal(env.USERPROFILE, join(scratch, 'home'));
 });
@@ -284,19 +242,12 @@ test("the verifier checks wiring and reports the stand-in's missing extension si
   const { checks } = await runPiHarness({
     workspace: makeWorkspace(),
     standin,
-    standinMode: 'gate',
   });
   const failed = checks
     .filter((check) => !check.ok && check.name !== 'pstack-pi-extension-loaded')
     .map((check) => `${check.name}: ${check.detail}`);
   assert.deepEqual(failed, []);
   assert.equal(checks.find((check) => check.name === 'pstack-pi-extension-loaded').ok, false);
-  assert.ok(
-    checks.some(
-      (check) =>
-        check.name === 'gate-extension-loaded' && check.detail.startsWith(GATE_DENIAL_PREFIX),
-    ),
-  );
 });
 
 test("finding F2: the pstack extension check requires /loop in Pi's RPC command list", async () => {
@@ -316,18 +267,6 @@ test("finding F2: the pstack extension check requires /loop in Pi's RPC command 
   assert.match(result.detail, /did not report/);
 });
 
-test('the verifier fails closed when the stand-in runs the denied command', async () => {
-  const { checks } = await runPiHarness({
-    workspace: makeWorkspace(),
-    standin,
-    standinMode: 'no-gate',
-  });
-  const byName = Object.fromEntries(checks.map((check) => [check.name, check.ok]));
-  assert.equal(byName['denied-command-did-not-run'], false);
-  assert.equal(byName['gate-extension-loaded'], false);
-  assert.equal(byName['denial-reached-model'], false);
-});
-
 test('the verifier fails when Pi does not start', async () => {
   const { checks } = await runPiHarness({
     workspace: makeWorkspace(),
@@ -342,7 +281,6 @@ test('the verifier names the layer whose skill is missing from the settings', as
   const { checks } = await runPiHarness({
     workspace: makeWorkspace({ omitLayer: 'personal-ai-plugin' }),
     standin,
-    standinMode: 'gate',
   });
   const failed = checks.filter((check) => !check.ok).map((check) => check.name);
   assert.deepEqual(failed, [
@@ -352,10 +290,7 @@ test('the verifier names the layer whose skill is missing from the settings', as
 });
 
 test('a workspace with no Pi settings is a setup error, not a check failure', async () => {
-  await assert.rejects(
-    runPiHarness({ workspace: tempDir('pi-empty-'), standin, standinMode: 'gate' }),
-    SetupError,
-  );
+  await assert.rejects(runPiHarness({ workspace: tempDir('pi-empty-'), standin }), SetupError);
 });
 
 test('the command line exits 2 with the reason when the workspace cannot be run', () => {

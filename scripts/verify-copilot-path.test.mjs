@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -32,7 +32,7 @@ sh.write_text('export COPILOT_CUSTOM_INSTRUCTIONS_DIRS="' + '$' + '{COPILOT_CUST
 cmd = bin_dir / 'copilot.cmd'
 fake = workspace / 'fake-copilot.exe'
 fake.write_text('', encoding='utf-8')
-cmd.write_text('set "AGENT_ACCESS_COPILOT_ASK=allow"\nset "COPILOT_CUSTOM_INSTRUCTIONS_DIRS=' + str(projection) + '"\n"' + str(fake) + '" --plugin-dir "' + str(workspace / 'plugin') + '" %*\n', encoding='utf-8')
+cmd.write_text('set "COPILOT_CUSTOM_INSTRUCTIONS_DIRS=' + str(projection) + '"\n"' + str(fake) + '" --plugin-dir "' + str(workspace / 'plugin') + '" %*\n', encoding='utf-8')
 lock = {'copilot': {'enabled': True, 'cmdSha256': hashlib.sha256(cmd.read_bytes()).hexdigest().upper(), 'shSha256': hashlib.sha256(sh.read_bytes()).hexdigest().upper()}, 'layers': [{'copilot': {'enabled': True, 'pluginDir': 'plugin'}}], 'owned': [{'path': '.maxstack/copilot-instructions/AGENTS.md', 'runtime': 'workspace-instructions', 'preserve': False}]}
 failures = []
 verifier.check_copilot(lock, workspace, failures)

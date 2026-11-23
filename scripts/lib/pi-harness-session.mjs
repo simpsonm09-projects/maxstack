@@ -58,8 +58,7 @@ export function writeScratchAgent({ scratch, baseUrl, model, settings }) {
 }
 
 // The environment for Pi. It is the wrapper's variables, with HOME and USERPROFILE moved into the
-// scratch folder so the user's ~/.pi and ~/.agents are not read. AGENT_ACCESS_PI_ASK is set as the
-// wrapper sets it, so an ask does not wait for a person.
+// scratch folder so the user's ~/.pi and ~/.agents are not read.
 export function piEnvironment({ scratch, agentDir, parentEnv }) {
   const home = join(scratch, 'home');
   mkdirSync(home, { recursive: true });
@@ -70,7 +69,6 @@ export function piEnvironment({ scratch, agentDir, parentEnv }) {
     HOME: home,
     USERPROFILE: home,
     PI_CODING_AGENT_DIR: agentDir,
-    AGENT_ACCESS_PI_ASK: 'allow',
     PI_OFFLINE: '1',
     PI_TELEMETRY: '0',
   };

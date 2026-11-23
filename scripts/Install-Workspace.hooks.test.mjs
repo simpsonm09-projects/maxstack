@@ -53,9 +53,9 @@ function renameDuplicate(ctx) {
   );
 }
 
-// Gives the org layer the two gate definitions and adapters, and lists hooks among its OpenCode items so the
+// Gives the org layer the two hook definitions and adapters, and lists hooks among its OpenCode items so the
 // installed copy carries them. The definitions use the layer-relative command the org plugin ships.
-function addGateHooks(ctx) {
+function addHooks(ctx) {
   const root = join(ctx.workspace, ORG);
   const layer = readJson(join(root, 'layer.json'));
   if (!layer.files.includes('hooks')) layer.files.push('hooks');
@@ -71,10 +71,10 @@ const posixPath = (path) => path.replaceAll('\\', '/');
 const hookRecord = (ctx, path) => readJson(lockPath(ctx)).owned.find((item) => item.path === path);
 
 withWorkspace(
-  'cursor writes its gate hook with the absolute adapter path, matches in status, and reports a change',
+  'cursor writes its hook with the absolute adapter path, matches in status, and reports a change',
   (ctx) => {
     renameDuplicate(ctx);
-    addGateHooks(ctx);
+    addHooks(ctx);
     mustApply(ctx, ['-Runtimes', 'cursor']);
 
     const path = join(ctx.workspace, '.cursor', 'hooks.json');
@@ -111,10 +111,10 @@ withWorkspace(
 );
 
 withWorkspace(
-  'antigravity writes its gate hook from the installed OpenCode copy and matches in status',
+  'antigravity writes its hook from the installed OpenCode copy and matches in status',
   (ctx) => {
     renameDuplicate(ctx);
-    addGateHooks(ctx);
+    addHooks(ctx);
     mustApply(ctx, ['-Runtimes', 'opencode,antigravity']);
 
     const path = join(ctx.workspace, '.agents', 'hooks.json');
@@ -144,13 +144,13 @@ withWorkspace(
   'an existing unowned cursor hook file is kept and named for hand installation',
   (ctx) => {
     renameDuplicate(ctx);
-    addGateHooks(ctx);
+    addHooks(ctx);
     mkdirSync(join(ctx.workspace, '.cursor'), { recursive: true });
     writeFileSync(join(ctx.workspace, '.cursor', 'hooks.json'), '{"user": true}\n');
     const run = mustApply(ctx, ['-Runtimes', 'cursor']);
     assert.match(
       plainOutput(run),
-      /exists and was not written by maxstack; add the Cursor gate hook by hand/,
+      /exists and was not written by maxstack; add the Cursor hook by hand/,
     );
     assert.equal(
       readFileSync(join(ctx.workspace, '.cursor', 'hooks.json'), 'utf8'),
@@ -162,10 +162,10 @@ withWorkspace(
 );
 
 withWorkspace(
-  'removing a runtime and uninstalling remove the gate hooks',
+  'removing a runtime and uninstalling remove the hooks',
   (ctx) => {
     renameDuplicate(ctx);
-    addGateHooks(ctx);
+    addHooks(ctx);
     mustApply(ctx);
     mustApply(ctx, ['-Runtimes', 'cursor,antigravity']);
     const cursorPath = join(ctx.workspace, '.cursor', 'hooks.json');

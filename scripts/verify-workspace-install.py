@@ -29,10 +29,7 @@ OBSOLETE_CLAUDE_FILES = (
 )
 RETIRED_OPENCODE_FOLDERS = ("pstack-opencode",)
 COPILOT_WRAPPERS = ("copilot.cmd", "copilot.sh")
-COPILOT_ASK_LINE = 'set "AGENT_ACCESS_COPILOT_ASK=allow"'
 PI_WRAPPERS = ("pi.cmd", "pi.sh")
-PI_ASK_LINE = 'set "AGENT_ACCESS_PI_ASK=allow"'
-PI_SH_ASK_LINE = "export AGENT_ACCESS_PI_ASK=allow"
 RUNTIMES = ("claude", "opencode", "copilot", "pi")
 
 
@@ -367,8 +364,6 @@ def check_copilot(lock: dict, workspace: pathlib.Path, failures: list[str]) -> N
     cmd = bin_dir / "copilot.cmd"
     if cmd.is_file():
         text = cmd.read_text(encoding="utf-8")
-        if COPILOT_ASK_LINE not in text:
-            failures.append(f"{cmd} does not set the ask switch: {COPILOT_ASK_LINE}")
         # The wrapper runs its executable on one line, which also names the plugin folders.
         run_lines = [
             line.strip() for line in text.splitlines() if "--plugin-dir" in line
@@ -405,7 +400,7 @@ def same_path(text: str, expected: pathlib.Path) -> bool:
 def check_pi_wrappers(
     lock_pi: dict, bin_dir: pathlib.Path, agent_dir: pathlib.Path, failures: list[str]
 ) -> None:
-    """Check the Pi wrappers against their hashes, the agent folder, and the ask switch."""
+    """Check the Pi wrappers against their hashes and the agent folder."""
     if not lock_pi.get("enabled"):
         for name in PI_WRAPPERS:
             if (bin_dir / name).exists():
@@ -428,8 +423,6 @@ def check_pi_wrappers(
     cmd = bin_dir / "pi.cmd"
     if cmd.is_file():
         text = cmd.read_text(encoding="utf-8")
-        if PI_ASK_LINE not in text:
-            failures.append(f"{cmd} does not set the ask switch: {PI_ASK_LINE}")
         agent = re.search(r'^set "PI_CODING_AGENT_DIR=(.+)"$', text, re.MULTILINE)
         if agent is None or not same_path(agent.group(1), agent_dir):
             failures.append(f"{cmd} does not set PI_CODING_AGENT_DIR to {agent_dir}")
@@ -440,8 +433,6 @@ def check_pi_wrappers(
     sh = bin_dir / "pi.sh"
     if sh.is_file():
         text = sh.read_text(encoding="utf-8")
-        if PI_SH_ASK_LINE not in text:
-            failures.append(f"{sh} does not set the ask switch: {PI_SH_ASK_LINE}")
         agent = re.search(
             r'^export PI_CODING_AGENT_DIR="([^"\n]*)"$', text, re.MULTILINE
         )

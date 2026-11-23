@@ -1,22 +1,18 @@
 #!/usr/bin/env node
 // Model-free smoke check for the Pi harness. It starts the stub model server, runs the workspace's Pi
 // in RPC mode against a scratch agent folder, and asserts the wiring: Pi starts and exits 0, a turn
-// reaches the stub, each Pi layer's skill is in the system prompt, the org gate denies a launcher call,
-// the denied command does not run, and the denial reaches the model as a tool result.
+// reaches the stub, each Pi layer's skill is in the system prompt, and the run leaves the workspace
+// alone.
 //
 // Usage: node scripts/verify-pi-harness.mjs [--workspace <path>]
 // It writes nothing to the workspace: it reads the Pi settings and the wrapper, and its own files live
 // in a scratch folder under the system temp directory, which is removed on every path.
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
-  checkBashCallMade,
   checkChatRequest,
-  checkDenialReachedModel,
-  checkDeniedNotRun,
-  checkGateLoaded,
   checkLayerSkill,
   checkPstackExtensionLoaded,
   checkPiExit,
@@ -40,21 +36,12 @@ import {
   snapshotTree,
   watchedFolders,
 } from './lib/pi-harness-workspace.mjs';
-import { DENY_TRIGGER, startStubModelServer, STUB_MODEL_ID } from './lib/stub-model-server.mjs';
+import { startStubModelServer, STUB_MODEL_ID } from './lib/stub-model-server.mjs';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const PLAIN_PROMPT = 'PI_SMOKE_PLAIN check the wiring';
-const DENY_PROMPT = `${DENY_TRIGGER} run the launcher call`;
 const RUN_TIMEOUT_MS = 120_000;
 const PROMPT_TIMEOUT_MS = 60_000;
-
-const slash = (path) => path.replaceAll('\\', '/');
-
-// The file the denied command would run. It is a stand-in that only writes a marker, so if the gate
-// failed to deny, nothing real runs: the real launcher holds credentials and is never used here.
-function launcherSource(marker) {
-  return `import { writeFileSync } from "node:fs";\nwriteFileSync(${JSON.stringify(marker)}, "ran");\n`;
-}
 
 function snapshotWatched(workspace) {
   const all = new Map();
@@ -78,16 +65,7 @@ function launchFor({ standin, standinMode, platform, piBin }) {
   return piLaunch({ piBin, args, platform });
 }
 
-async function runChecks({
-  workspace,
-  settings,
-  skills,
-  launch,
-  parentEnv,
-  scratch,
-  stub,
-  marker,
-}) {
+async function runChecks({ workspace, settings, skills, launch, parentEnv, scratch, stub }) {
   const agentDir = writeScratchAgent({
     scratch,
     baseUrl: stub.baseUrl,
@@ -102,7 +80,7 @@ async function runChecks({
     launch,
     env,
     cwd,
-    prompts: [PLAIN_PROMPT, DENY_PROMPT],
+    prompts: [PLAIN_PROMPT],
     timeoutMs: RUN_TIMEOUT_MS,
     promptMs: PROMPT_TIMEOUT_MS,
   });
@@ -113,10 +91,6 @@ async function runChecks({
     checkPstackExtensionLoaded(session),
     checkPlainTurn(session),
     ...skills.map((skill) => checkLayerSkill(stub, skill)),
-    checkBashCallMade(session),
-    checkGateLoaded(session),
-    checkDenialReachedModel(stub),
-    checkDeniedNotRun(marker, session),
     checkWorkspaceUnchanged(before, after),
   ];
 }
@@ -128,7 +102,7 @@ export async function runPiHarness({
   parentEnv = process.env,
   platform = process.platform,
   standin,
-  standinMode = 'gate',
+  standinMode = 'run',
 }) {
   const layers = readPiLayerNames(repoRoot);
   const settings = readPiSettings(workspace);
@@ -138,10 +112,7 @@ export async function runPiHarness({
   const scratch = mkdtempSync(join(tmpdir(), 'maxstack-pi-smoke-'));
   let stub = null;
   try {
-    const marker = join(scratch, 'launcher-ran.marker');
-    const launcher = join(scratch, 'with-gh-token.mjs');
-    writeFileSync(launcher, launcherSource(marker));
-    stub = await startStubModelServer({ denyCommand: `node "${slash(launcher)}" smoke` });
+    stub = await startStubModelServer();
     const checks = await runChecks({
       workspace,
       settings,
@@ -150,7 +121,6 @@ export async function runPiHarness({
       parentEnv,
       scratch,
       stub,
-      marker,
     });
     return { checks, piBin: standin ? 'stand-in' : piBin };
   } finally {
