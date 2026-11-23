@@ -21,11 +21,11 @@ T3 reloads instance settings while it runs. A new agent session also starts with
 | `codex` | Codex | Codex | default launch configuration | Plain Codex |
 | `codex_maxstack` | maxstack | Codex | workspace launch configuration described below | Codex with workspace skills |
 | `claudeAgent` | Claude | Claude | no plugin folder | Plain Claude Code |
-| `claudeSimpsonm09` | maxstack | Claude | launch args `--plugin-dir <workspace>\.claude\plugins` | Claude Code with the workspace plugins (legacy ID) |
-| `copilot` | Copilot | Copilot | the registry `copilot.exe` | Plain Copilot CLI |
-| `copilotSimpsonm09` | maxstack | Copilot | `commandPath` `<workspace>/.maxstack/bin/copilot.cmd` (macOS: `copilot.sh`) | Copilot CLI with the workspace plugins (legacy ID) |
+| `claudeSimpsonm09` | maxstack | Claude | launch args `--plugin-dir <workspace>/.claude/plugins` | Claude Code with the workspace plugins (legacy ID) |
+| `copilot` | Copilot | Copilot | the `copilot` on `PATH` | Plain Copilot CLI |
+| `copilotSimpsonm09` | maxstack | Copilot | `commandPath` `<workspace>/.maxstack/bin/copilot.sh` | Copilot CLI with the workspace plugins (legacy ID) |
 | `pi` | Pi | Pi | disabled | Plain Pi |
-| `piSimpsonm09` | maxstack | Pi | `binaryPath` `<workspace>/.maxstack/bin/pi.cmd` | Pi with the workspace packages and skills (legacy ID) |
+| `piSimpsonm09` | maxstack | Pi | `binaryPath` `<workspace>/.maxstack/bin/pi.sh` | Pi with the workspace packages and skills (legacy ID) |
 
 The maxstack instances apply only to the workspace named in their paths. The default instances need no folder and no wrapper.
 
@@ -37,8 +37,8 @@ Use these exact provider instance IDs for new maxstack instances. The human-read
 | --- | --- | --- | --- | --- |
 | Codex | `codex_maxstack` | `maxstack` | `codex` | Binary path and launch arguments from the Codex setup below |
 | Claude Code | `claude_maxstack` | `maxstack` | `claudeAgent` | `--plugin-dir <workspace>/.claude/plugins` |
-| Copilot CLI | `copilot_maxstack` | `maxstack` | `acpRegistry` | `commandPath` `<workspace>/.maxstack/bin/copilot.cmd` on Windows or `.sh` on macOS |
-| Pi | `pi_maxstack` | `maxstack` | `pi` | `binaryPath` `<workspace>/.maxstack/bin/pi.cmd`; empty `launchArgs` |
+| Copilot CLI | `copilot_maxstack` | `maxstack` | `acpRegistry` | `commandPath` `<workspace>/.maxstack/bin/copilot.sh` |
+| Pi | `pi_maxstack` | `maxstack` | `pi` | `binaryPath` `<workspace>/.maxstack/bin/pi.sh`; empty `launchArgs` |
 
 The driver chooses how T3 starts a provider. Keep these driver IDs unchanged when you create the canonical provider IDs. The instance ID names the provider choice used by threads, sessions, events, bindings, and project defaults. The model picker selects a model independently. Selecting a provider instance supplies its launch configuration; selecting a model does not change that configuration.
 
@@ -86,37 +86,37 @@ OpenCode keeps one private service credential across server restarts, so a disco
 
 ## Claude Code
 
-Claude Code does not walk up for plugins. The installer therefore builds one folder of Claude plugins at the workspace root, `<workspace>\.claude\plugins`. Each child folder is one plugin. The `claudeSimpsonm09` instance points at that folder:
+Claude Code does not walk up for plugins. The installer therefore builds one folder of Claude plugins at the workspace root, `<workspace>/.claude/plugins`. Each child folder is one plugin. The `claudeSimpsonm09` instance points at that folder:
 
 1. Generate the folder: `pwsh -File scripts/Install-Workspace.ps1 -Apply`.
-2. Create or configure `claude_maxstack` in T3, if its settings UI supports that exact ID. Set its label to `maxstack` and its launch arguments to `--plugin-dir <workspace>\.claude\plugins`. Keep `claudeSimpsonm09` available until you verify the canonical instance.
+2. Create or configure `claude_maxstack` in T3, if its settings UI supports that exact ID. Set its label to `maxstack` and its launch arguments to `--plugin-dir <workspace>/.claude/plugins`. Keep `claudeSimpsonm09` available until you verify the canonical instance.
 3. After verifying the instance, set the fleet project's default provider ID to `claude_maxstack`. Keep the model selection unchanged.
 
-Plain `claude` outside T3 takes the same flag, so `claude --plugin-dir <workspace>\.claude\plugins` gives the same plugins.
+Plain `claude` outside T3 takes the same flag, so `claude --plugin-dir <workspace>/.claude/plugins` gives the same plugins.
 
 Claude Code reads `CLAUDE.md` from the session folder and its parent folders. When instructions are generated, maxstack writes a root `CLAUDE.md` that imports `AGENTS.md`. If a user root instruction file blocks generation, maxstack keeps it and writes the shared text under `.maxstack` instead.
 
-The alternative is an instance environment entry, `CLAUDE_CODE_PLUGIN_DIRS`, with the child folders listed and separated by `;`. The installer does not generate that list; it is the same folders as the `--plugin-dir` route.
+The alternative is an instance environment entry, `CLAUDE_CODE_PLUGIN_DIRS`, with the child folders listed and separated by `:`. The installer does not generate that list; it is the same folders as the `--plugin-dir` route.
 
 | Plugin | Folder | Source | Skills appear as |
 | --- | --- | --- | --- |
-| `pstack` | `.claude\plugins\pstack` | a copy of `plugins/pstack` from pstack-max, our fork of pstack-claude, at the commit in `pstack.lock.json` | `pstack:poteto-mode`, and the other `pstack:*` skills |
-| `org-ai-plugin` | `.claude\plugins\org-ai-plugin` | a junction to `.opencode\plugins\org-ai-plugin` | `org-ai-plugin:repo-standard`, and the other `org-ai-plugin:*` skills |
-| `personal-ai-plugin` | `.claude\plugins\personal-ai-plugin` | a junction to `.opencode\plugins\personal-ai-plugin` | `personal-ai-plugin:dev-tools`, and the other `personal-ai-plugin:*` skills |
+| `pstack` | `.claude/plugins/pstack` | a copy of `plugins/pstack` from pstack-max, our fork of pstack-claude, at the commit in `pstack.lock.json` | `pstack:poteto-mode`, and the other `pstack:*` skills |
+| `org-ai-plugin` | `.claude/plugins/org-ai-plugin` | a symbolic link to `.opencode/plugins/org-ai-plugin` | `org-ai-plugin:repo-standard`, and the other `org-ai-plugin:*` skills |
+| `personal-ai-plugin` | `.claude/plugins/personal-ai-plugin` | a symbolic link to `.opencode/plugins/personal-ai-plugin` | `personal-ai-plugin:dev-tools`, and the other `personal-ai-plugin:*` skills |
 
-The local folders are junctions to the installed OpenCode copies, so there is still one installed copy for both harnesses. One `Install-Workspace.ps1 -Apply` updates both. A junction needs no administrator rights. Each plugin's hooks run only in sessions that load it, and they resolve their files through the junction.
+The local folders are symbolic links to the installed OpenCode copies, so there is still one installed copy for both harnesses. One `Install-Workspace.ps1 -Apply` updates both. Each plugin's hooks run only in sessions that load it, and they resolve their files through the link.
 
-The pstack folder is a copy, not a junction. It is not a junction because the OpenCode copy holds only `opencode/` and `skills/`, and the Claude plugin needs the whole folder. The installer fetches the fork into `.claude\cache\pstack`, sparse to `plugins/pstack`, and checks out the pinned commit. The cache is reused offline once it holds the commit.
+The pstack folder is a copy, not a link. It is not a link because the OpenCode copy holds only `opencode/` and `skills/`, and the Claude plugin needs the whole folder. The installer fetches the fork into `.claude/cache/pstack`, sparse to `plugins/pstack`, and checks out the pinned commit. The cache is reused offline once it holds the commit.
 
 ## Copilot
 
-The Copilot provider does not take plugin folders from the instance's arguments. T3 ignores `commandArgs` for registry ACP agents. So the installer writes `.maxstack\bin\copilot.cmd` and `.maxstack\bin\copilot.sh` on Windows, and `.maxstack/bin/copilot.sh` on macOS and Linux. The `copilotSimpsonm09` instance starts the wrapper instead of `copilot`. The default `copilot` instance starts the registry `copilot.exe` on Windows and needs no wrapper.
+The Copilot provider does not take plugin folders from the instance's arguments. T3 ignores `commandArgs` for registry ACP agents. So the installer writes `.maxstack/bin/copilot.sh`. The `copilotSimpsonm09` instance starts the wrapper instead of `copilot`. The default `copilot` instance starts the `copilot` on `PATH` and needs no wrapper.
 
 1. Generate the wrapper: `pwsh -File scripts/Install-Workspace.ps1 -Apply`. It needs the Copilot CLI installed. If Copilot is not on `PATH`, the installer keeps the wrappers it already wrote, as they are, and warns; with none recorded, it skips them and says so. Install Copilot, then run it again.
-2. Create or configure `copilot_maxstack` in T3, if its settings UI supports that exact ID. Set its label to `maxstack` and `config.commandPath` to `<workspace>/.maxstack/bin/copilot.cmd` on Windows or `<workspace>/.maxstack/bin/copilot.sh` on macOS. Keep `copilotSimpsonm09` available until you verify the canonical instance.
+2. Create or configure `copilot_maxstack` in T3, if its settings UI supports that exact ID. Set its label to `maxstack` and `config.commandPath` to `<workspace>/.maxstack/bin/copilot.sh`. Keep `copilotSimpsonm09` available until you verify the canonical instance.
 3. After verifying the instance, set the fleet project's default provider ID to `copilot_maxstack`. Keep the model selection unchanged.
 
-The wrapper runs the Copilot CLI with one `--plugin-dir` for each layer that lists `copilot`, in layer order: pstack, then the org layer, then the personal layer. Each folder is the same `.claude\plugins` folder Claude Code uses. The wrapper then passes its own arguments through. Windows `copilot.cmd` records the executable's absolute path; macOS and Linux `copilot.sh` resolve `copilot` from `PATH` when launched.
+The wrapper runs the Copilot CLI with one `--plugin-dir` for each layer that lists `copilot`, in layer order: pstack, then the org layer, then the personal layer. Each folder is the same `.claude/plugins` folder Claude Code uses. The wrapper then passes its own arguments through. `copilot.sh` resolves `copilot` from `PATH` when launched.
 
 ### The ask switch
 
@@ -132,15 +132,15 @@ The variable is set in the wrapper, not in the T3 instance, so other Copilot run
 
 ### What works on Copilot
 
-On Windows, pstack's PreToolUse hook is a no-op stub under Copilot, so its file-read and subagent-model checks do not run there. The SessionStart context, the skills, and the org gate work on Copilot. When selected layers declare workspace instructions, the generated Copilot wrappers append an installer-owned `.maxstack/copilot-instructions` directory to `COPILOT_CUSTOM_INSTRUCTIONS_DIRS`; that directory contains a projected `AGENTS.md`, intended to let Copilot discover the selected-layer instructions from a nested repository. The wrappers preserve any existing comma-separated directory list, and planning refuses a projected instruction path containing a comma because the CLI variable has no escaping syntax, or an exclamation mark because cmd delayed expansion can remove it. Validation occurs before installer writes, even when Copilot is not installed. Hosted macOS CI checks wrapper generation and the no-login installer lifecycle. Offline fixtures verify environment and file projection only; the owner still needs to run the installer on the work Mac, start a fresh session through `copilot.sh`, sign in, and confirm that the T3 ACP provider launches the wrapper and Copilot loads the projected instructions. Actual T3 environment inheritance and live instruction consumption remain unverified. See [current delivery state](features/current-alignment.md).
+The SessionStart context, the skills, and the org gate work on Copilot. When selected layers declare workspace instructions, the generated Copilot wrapper appends an installer-owned `.maxstack/copilot-instructions` directory to `COPILOT_CUSTOM_INSTRUCTIONS_DIRS`; that directory contains a projected `AGENTS.md`, intended to let Copilot discover the selected-layer instructions from a nested repository. The wrapper preserves any existing comma-separated directory list, and planning refuses a projected instruction path containing a comma because the CLI variable has no escaping syntax. Validation occurs before installer writes, even when Copilot is not installed. The portable workflow on Linux checks wrapper generation and the no-login installer lifecycle. Offline fixtures verify environment and file projection only; a live session still needs a signed-in Copilot and a T3 ACP provider that launches the wrapper. Actual T3 environment inheritance and live instruction consumption remain unverified. See [current delivery state](features/current-alignment.md).
 
 ## Pi (maxstack)
 
-T3's native Pi provider runs `<binaryPath> --mode rpc <launchArgs>`. The installer writes a wrapper, `.maxstack\bin\pi.cmd`, and Pi's settings, `.pi\agent\settings.json`. The wrapper sets the agent folder to `.pi\agent`, so Pi loads the workspace layers and keeps its own login there. The `piSimpsonm09` instance starts the wrapper.
+T3's native Pi provider runs `<binaryPath> --mode rpc <launchArgs>`. The installer writes a wrapper, `.maxstack/bin/pi.sh`, and Pi's settings, `.pi/agent/settings.json`. The wrapper sets the agent folder to `.pi/agent`, so Pi loads the workspace layers and keeps its own login there. The `piSimpsonm09` instance starts the wrapper.
 
-1. Install the Pi CLI, `@earendil-works/pi-coding-agent`, into `<workspace>/.maxstack/npm` so its executable lands in `.maxstack/npm/node_modules/.bin`, or make it available on `PATH`. The installer looks in the workspace first. Then generate the wrapper and settings with `pwsh -File scripts/Install-Workspace.ps1 -Apply`. The installer writes the absolute path of the Pi it finds into `pi.cmd`. If Pi is missing, the final summary reports the skipped wrappers; install Pi and rerun with `-PiCommand <path>`.
-2. Sign in once, yourself. Run `<workspace>/.maxstack/bin/pi.cmd`, enter `/login` in Pi, and sign in to a provider. The login is written under `.pi/agent`, the folder T3's instance uses. Keep `.pi/agent/auth.json` out of git, and never paste it into a doc or a chat. An agent never logs in for you.
-3. Create or configure `pi_maxstack` in T3, if its settings UI supports that exact ID. Set its label to `maxstack`, its driver to `pi`, `binaryPath` to `<workspace>/.maxstack/bin/pi.cmd`, and `launchArgs` to empty. Leave `customModels` empty and pick the model in T3's picker. maxstack sets no Pi model or provider. Keep `piSimpsonm09` available until you verify the canonical instance.
+1. Install the Pi CLI, `@earendil-works/pi-coding-agent`, into `<workspace>/.maxstack/npm` so its executable lands in `.maxstack/npm/node_modules/.bin`, or make it available on `PATH`. The installer looks in the workspace first. Then generate the wrapper and settings with `pwsh -File scripts/Install-Workspace.ps1 -Apply`. If Pi is missing, the final summary reports the skipped wrapper; install Pi and rerun with `-PiCommand <path>`.
+2. Sign in once, yourself. Run `<workspace>/.maxstack/bin/pi.sh`, enter `/login` in Pi, and sign in to a provider. The login is written under `.pi/agent`, the folder T3's instance uses. Keep `.pi/agent/auth.json` out of git, and never paste it into a doc or a chat. An agent never logs in for you.
+3. Create or configure `pi_maxstack` in T3, if its settings UI supports that exact ID. Set its label to `maxstack`, its driver to `pi`, `binaryPath` to `<workspace>/.maxstack/bin/pi.sh`, and `launchArgs` to empty. Leave `customModels` empty and pick the model in T3's picker. maxstack sets no Pi model or provider. Keep `piSimpsonm09` available until you verify the canonical instance.
 
 What Pi loads:
 
@@ -197,7 +197,7 @@ The opt-in `cursor` runtime copies selected layer skills into `<Workspace>/.curs
 
 Create or configure the `codex_maxstack` provider instance in T3 Code. This workspace has that instance, but a fresh install may not. Use the ID `codex_maxstack` and label `maxstack` if the T3 settings UI supports that exact custom ID for Codex. Otherwise, keep `codex_maxstack` as the target and do not migrate a project default to it. Keep CODEX_HOME path and Shadow home path at their defaults:
 
-1. Keep CODEX_HOME path and Shadow home path at their defaults. On Windows, use the package's native `codex.exe` as Binary path when T3 would start the npm `codex.cmd` shim through a shell. The fixed argument contains brackets and quotes that shell parsing can alter. The line uses single quotes inside double quotes because Windows PowerShell 5.1 drops double quotes nested inside single quotes when it starts a program.
+1. Keep CODEX_HOME path and Shadow home path at their defaults. Use the package's native `codex` binary as Binary path when T3 would otherwise start the npm shim through a shell, because the fixed argument contains brackets and quotes that shell parsing can alter.
 2. Set Launch arguments to this fixed line. The installer prints it every time. It never changes.
 
    ```text
@@ -255,10 +255,10 @@ Cursor and Antigravity have T3 instances. Cursor remains unverified because of t
 
 ## Checks
 
-- The audit prints drift for each child and each wrapper without writing anything: `pwsh -File scripts/Install-Workspace.ps1`. It reports `missing`, `differs`, `matches`, or `stale`. A `stale` line also marks a folder under `.opencode\plugins` that no layer names. `-Apply` removes such a folder only when the previous `stack.lock.json` recorded it as a layer folder, or when it is the retired `pstack-opencode` port, and reports any other one as kept.
-- The OpenCode check runs `opencode debug config` and `opencode debug agents` from the workspace: `pwsh -File scripts/verify-opencode-workspace.ps1`. OpenCode 2.x debug commands start or reuse its managed background service; the check makes no model call. Each command has a 60-second limit.
+- The audit prints drift for each child and each wrapper without writing anything: `pwsh -File scripts/Install-Workspace.ps1`. It reports `missing`, `differs`, `matches`, or `stale`. A `stale` line also marks a folder under `.opencode/plugins` that no layer names. `-Apply` removes such a folder only when the previous `stack.lock.json` recorded it as a layer folder, or when it is the retired `pstack-opencode` port, and reports any other one as kept.
+- The skill check runs a bounded OpenCode session that loads a skill: `scripts/verify-workspace-skill.sh <provider/model>`. It needs a model because the workspace names none, and its third argument is the time limit.
 - The workspace verifier checks each runtime against `stack.lock.json`: `python scripts/verify-workspace-install.py`. For Copilot it checks each wrapper's hash, the ask switch, the plugin folders in order, and that the executable exists. For Pi it checks each wrapper's hash, the agent folder and ask switch, and that the settings list each recorded package and skills folder, and that each package has a `pi` key.
-- A live probe from a scratch repository under `projects\repos`: `claude -p --model haiku --plugin-dir <workspace>\.claude\plugins --output-format stream-json --verbose "List the plugin skills you have whose names start with simpsonm09. Reply with just the names."` The init event lists the loaded plugins and skills.
+- A live probe from a scratch repository under `projects/repos`: `claude -p --model haiku --plugin-dir <workspace>/.claude/plugins --output-format stream-json --verbose "List the plugin skills you have whose names start with simpsonm09. Reply with just the names."` The init event lists the loaded plugins and skills.
 
 ## Why not `--settings`
 
@@ -274,15 +274,13 @@ An earlier design gave each T3 instance `--settings <file>`, which holds a marke
 
 ## Verified
 
-- `--plugin-dir <parent>` loads each child folder, junctions included. The plugin reports as `<name>@inline`.
+- `--plugin-dir <parent>` loads each child folder, symbolic links included. The plugin reports as `<name>@inline`.
 - `CLAUDE_CODE_PLUGIN_DIRS` loads the listed folders with no flag.
 - `--plugin-dir` alongside `--settings '{"showThinkingSummaries":true}'` keeps the plugins and all their skills loaded.
-- The org SessionStart hook runs through the junction, and `${CLAUDE_PLUGIN_ROOT}` resolves there.
-- The org PreToolUse hook runs through the junction. A Bash command that mentions the GitHub token launcher is denied by it.
+- The org SessionStart hook runs through the symbolic link, and `${CLAUDE_PLUGIN_ROOT}` resolves there.
+- The org PreToolUse hook runs through the symbolic link. A Bash command that mentions the GitHub token launcher is denied by it.
 - OpenCode 2.0.26 loads the nested pstack entry named in `opencode.jsonc`, and the root org and personal entries, from an installed workspace. The check used a temporary workspace and an unavailable model, so it made no model call.
-- The generated `copilot.cmd` runs its executable with the switch set and every plugin folder in order, and passes arguments through. This was first tested with a stand-in executable. It has since been verified live on Windows through the `copilotSimpsonm09` instance: the SessionStart context, the skills, and the org gate work.
-
-Not yet verified: `copilot.sh` on macOS.
+- The generated `copilot.sh` runs its executable with the switch set and every plugin folder in order, and passes arguments through. This was first tested with a stand-in executable. A live Linux session through `copilotSimpsonm09` remains unverified.
 
 ## Generated files and git
 

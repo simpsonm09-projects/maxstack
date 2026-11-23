@@ -1,8 +1,8 @@
 name: portable
 
-# The Windows installer suite and the macOS and Linux portability checks are slow
-# and cross-OS. They run on `main`, weekly and on demand instead of on the required
-# pull request path. See the owner standard C5.4.
+# The installer fixture suite is slow and does not diff, so it runs on `main`,
+# weekly and on demand instead of on the required pull request path. Every job
+# runs on Linux (C5.6). See the owner standard C5.4.
 
 on:
   push:
@@ -19,66 +19,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # The installer suite is split across four Windows runners; each shard drives
-  # Install-Workspace.ps1 under PowerShell 7 and compares against upstream main.
-  # fetch-depth 0 provides that commit.
-  test-windows:
-    runs-on: windows-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        shard: [1, 2, 3, 4]
-    timeout-minutes: 40
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-      - name: Install pinned tools
-        uses: jdx/mise-action@9b200bcecbfd6303e69a4a261b2e09e3757440a7 # v5.2.0
-      - name: Print the runner facts the suite depends on
-        shell: bash
-        run: |
-          git --version
-          node --version
-          pwsh --version
-          echo "RUNNER_TEMP=$RUNNER_TEMP"
-          echo "os.tmpdir()=$(node -p "require('os').tmpdir()")"
-          echo "global safe.directory entries:"
-          git config --global --get-all safe.directory || echo "  (none)"
-      - name: Run node test shard ${{ matrix.shard }} of 4
-        # The default temp path is an 8.3 short name; the installer reports the long form, so the tests need a temp folder without one.
-        env:
-          TEMP: ${{ runner.temp }}
-          TMP: ${{ runner.temp }}
-        run: just test-node-shard ${{ matrix.shard }} 4
-
-  test-macos:
-    runs-on: macos-latest
-    timeout-minutes: 30
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - name: Install pinned tools
-        uses: jdx/mise-action@9b200bcecbfd6303e69a4a261b2e09e3757440a7 # v5.2.0
-      - name: Ensure PowerShell 7 is available
-        shell: bash
-        run: |
-          if ! command -v pwsh >/dev/null 2>&1; then
-            brew install powershell
-          fi
-          pwsh --version
-      - name: Print runner tools
-        run: |
-          node --version
-          python3 --version
-          git --version
-      - name: Run focused macOS checks
-        run: just test-macos
-
   test-linux:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -96,5 +36,5 @@ jobs:
           node --version
           python3 --version
           git --version
-      - name: Run focused POSIX checks
-        run: just test-posix
+      - name: Run the POSIX installer fixture lifecycle
+        run: just test-linux

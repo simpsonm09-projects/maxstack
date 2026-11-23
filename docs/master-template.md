@@ -50,7 +50,7 @@ Three behaviors constrain the design:
 
 ## Installer lifecycle
 
-The installer selects runtimes and layers, records what it wrote, and removes it with `-Remove` and `-Uninstall`. Both are dry runs until `-Apply`, and [install.md](install.md#removing-and-uninstalling) states their rules. Its platform declaration includes Windows, macOS, and Linux. On Windows, `update` is built as `-Update` and `-Update -Check`, with the rules in [install.md](install.md#updating-the-sources). The target is one entry point with these commands, the same on Windows and macOS:
+The installer selects runtimes and layers, records what it wrote, and removes it with `-Remove` and `-Uninstall`. Both are dry runs until `-Apply`, and [install.md](install.md#removing-and-uninstalling) states their rules. Its platform declaration is Linux. `update` is built as `-Update` and `-Update -Check`, with the rules in [install.md](install.md#updating-the-sources). The target is one entry point with these commands:
 
 | Command | Effect |
 | --- | --- |
@@ -76,11 +76,11 @@ Ownership is what makes removal safe:
 
 The proof is a round trip. A test snapshots a workspace, runs `install` then `uninstall`, and requires the tree to match the snapshot. Another runs `install`, `remove` for one runtime, and `update`, and requires the other runtimes' files to stay byte-identical.
 
-macOS needs the installer to stop assuming Windows. PowerShell 7 runs on macOS, but the installer uses junctions. On POSIX it uses symbolic links and sets the executable bit on the shell wrappers. CI runs the lifecycle tests on Windows and macOS.
+Linux is the only target. PowerShell 7 runs the installer, which uses symbolic links and sets the executable bit on the shell wrappers. CI runs the lifecycle tests on Linux.
 
 ## Layer sources (implemented)
 
-Implemented on Windows. The commands and the lock record are in [install.md](install.md#layer-sources). Before this was built, `-LayerSource name=path` could override only a local layer and refused PStack, so a change on a fork branch could not be tried without editing `layers.json`.
+Implemented on Linux. The commands and the lock record are in [install.md](install.md#layer-sources). Before this was built, `-LayerSource name=path` could override only a local layer and refused PStack, so a change on a fork branch could not be tried without editing `layers.json`.
 
 Every layer, including PStack, names where it installs from.
 
@@ -117,7 +117,7 @@ The master template promises the same behavior in every runtime where that is po
 
 | Phase | Scope | Proof |
 | --- | --- | --- |
-| 0 | Generation of skills and OpenCode MCP, built standalone; instruction composition and the installer wiring still to do. One PStack pin. The duplicate skill trees go. The lifecycle: runtime and layer selection, layer sources and overrides, the ownership record, `update`, `remove`, `uninstall`, and macOS support. | The generated output for the four installed runtimes matches today's installs, and the install and uninstall round trip leaves the tree unchanged on Windows and macOS. |
+| 0 | Generation of skills and OpenCode MCP, built standalone; instruction composition and the installer wiring still to do. One PStack pin. The duplicate skill trees go. The lifecycle: runtime and layer selection, layer sources and overrides, the ownership record, `update`, `remove`, and `uninstall`. | The generated output for the four installed runtimes matches today's installs, and the install and uninstall round trip leaves the tree unchanged on Linux. |
 | 1 | Agents and hooks conversion for those four runtimes. | The gate denies the same commands as today in each runtime. |
 | 2 | Codex: a `codex` runtime key, a `CODEX_HOME` wrapper, a gate adapter. | A denied command is blocked in a Codex session. |
 | 3 | Cursor and Antigravity: stamping and workspace-root files. | A skill and the gate work in each, quota permitting. |

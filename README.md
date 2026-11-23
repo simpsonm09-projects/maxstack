@@ -13,11 +13,11 @@ for the branch model and the protection rules.
 
 PStack comes from one source: the `plugins/pstack` folder of [pstack-max, our fork of pstack-claude](https://github.com/simpsonm09/pstack-max), at the commit in [`pstack.lock.json`](pstack.lock.json). `layers.json` lists it once, with its runtimes. The installer builds each runtime from that pin:
 
-- OpenCode: `.opencode\plugins\pstack`, with the agent profiles in `.opencode\agents`.
-- Claude Code: `.claude\plugins\pstack`.
-- GitHub Copilot CLI: `.maxstack\bin\copilot.cmd` and `copilot.sh`, which run Copilot with the Claude plugin folders.
-- Pi: `.maxstack\bin\pi.cmd` and `pi.sh`, which run Pi with the settings in `.pi\agent`, listing the same layers as packages and skills.
-- Codex (opt-in): `.agents\skills`, a copy of each selected layer's skills. Its T3 instance needs one launch argument. See [`docs/t3-setup.md`](docs/t3-setup.md#codex-maxstack).
+- OpenCode: `.opencode/plugins/pstack`, with the agent profiles in `.opencode/agents`.
+- Claude Code: `.claude/plugins/pstack`.
+- GitHub Copilot CLI: `.maxstack/bin/copilot.sh`, which runs Copilot with the Claude plugin folders.
+- Pi: `.maxstack/bin/pi.sh`, which runs Pi with the settings in `.pi/agent`, listing the same layers as packages and skills.
+- Codex (opt-in): `.agents/skills`, a copy of each selected layer's skills. Its T3 instance needs one launch argument. See [`docs/t3-setup.md`](docs/t3-setup.md#codex-maxstack).
 
 The org and personal layers are local checkouts. They install for the same four runtimes, and for Codex when it is selected. Their Claude folders are links to the OpenCode copies. Nothing is global. See [`docs/t3-setup.md`](docs/t3-setup.md). The plan to maintain one master source for seven runtimes is in [`docs/master-template.md`](docs/master-template.md), and the standalone layer generator is described in [`docs/neutral-layer-generator.md`](docs/neutral-layer-generator.md).
 
@@ -30,7 +30,7 @@ The org and personal layers are local checkouts. They install for the same four 
 
 ## Quick start
 
-```powershell
+```bash
 pwsh -File scripts/Install-Workspace.ps1 -Apply
 ```
 
@@ -47,8 +47,9 @@ After an install, restart the running OpenCode server before using a new T3 sess
 | `just security` | Scans the filesystem with Trivy. |
 | `just validate` | Validates the workspace manifests the installer consumes. |
 | `just validate-online` | Also checks the pstack pin against GitHub. Needs `git` and network. |
-| `just test` | Runs the manifest verifier and the Node tests that need no Windows. |
-| `just test-node` | Runs the full node test suite under `scripts/`. Needs Node and, for the installer tests, PowerShell 7 and git. |
+| `just test` | Runs the manifest verifier and the fast Node tests. |
+| `just test-node` | Runs the full node test suite under `scripts/`. Needs Node, PowerShell 7, and git; it is a local check, not a CI job. |
+| `just test-linux` | Runs the POSIX installer fixture lifecycle on Linux; the `portable` workflow runs it. |
 | `just check` | Runs everything CI requires locally: format, lint, and test. |
 | `just verify` | Runs lint, test, and the AI-slop gate. |
 | `just agent-files` | Checks the `.agents/skills` tree and its `.claude/skills` links. |

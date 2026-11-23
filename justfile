@@ -1,6 +1,5 @@
 # Local task runner. Recipes mirror .github/workflows/ci.yml and the
 # repo-standard local-run commands.
-set windows-shell := ["pwsh", "-NoLogo", "-Command"]
 
 default:
     @just --list
@@ -38,32 +37,18 @@ validate:
 validate-online:
     mise exec -- python scripts/verify-manifests.py --online
 
-# Run the node test suite under scripts/. The installer tests need PowerShell 7 and git; a missing program skips its test.
+# Run the full node test suite under scripts/. The installer tests need PowerShell 7 and git; a missing program skips its test.
 test-node:
     mise exec -- node --test --test-concurrency=4 scripts/*.test.mjs
 
-# Run one shard of the node test suite. The portable workflow runs four shards on separate Windows runners.
-test-node-shard index total:
-    mise exec -- node --test --test-concurrency=4 --test-shard={{index}}/{{total}} scripts/*.test.mjs
+# Run the POSIX installer fixture lifecycle. The portable workflow runs it on Linux.
+test-linux:
+    mise exec -- node --test --test-concurrency=4 scripts/ordinal-guard.test.mjs scripts/Install-Paths.test.mjs scripts/Install-Links.test.mjs scripts/verify-manifests.test.mjs scripts/Install-Workspace.posix.test.mjs
 
-# The installer suite stays in test-node, because it drives Install-Workspace.ps1 under PowerShell 7.
-
-# Run the checks that need no Windows: the manifest verifier and the Node tests that run on any OS.
+# Run the checks the required pull request path can afford: the manifest verifier and the fast Node tests.
 test:
     mise exec -- python scripts/verify-manifests.py
     mise exec -- node --test scripts/ordinal-guard.test.mjs scripts/generate-layers.test.mjs scripts/verify-manifests.test.mjs scripts/verify-pi-harness.test.mjs
-
-# The focused POSIX portability set. The portable workflow runs it on macOS and Linux.
-test-posix:
-    mise exec -- node --test scripts/ordinal-guard.test.mjs
-    mise exec -- node --test scripts/Install-Paths.test.mjs
-    mise exec -- node --test scripts/Install-Links.test.mjs
-    mise exec -- node --test scripts/verify-manifests.test.mjs
-    mise exec -- node --test scripts/Install-Workspace.macos.test.mjs
-
-# Keep the existing macOS recipe name for local callers.
-test-macos:
-    just test-posix
 
 # Run the lint, test, and AI-slop gates.
 verify: lint test aislop
@@ -78,9 +63,9 @@ check-agent-tools:
 
 # Project layer sources into a dedicated runtime bundle. Arguments: runtime, output directory,
 # layer roots separated by ';' (name=path allowed), then optionally --check. Each value is quoted
-# for the shell the recipe runs in: PowerShell on Windows doubles an apostrophe, POSIX sh uses quote().
+# for the POSIX shell the recipe runs in.
 generate-layers runtime out layers check="":
-    mise exec -- node scripts/generate-layers.mjs --runtime {{ if os_family() == "windows" { "'" + replace(runtime, "'", "''") + "'" } else { quote(runtime) } }} --out {{ if os_family() == "windows" { "'" + replace(out, "'", "''") + "'" } else { quote(out) } }} --layers {{ if os_family() == "windows" { "'" + replace(layers, "'", "''") + "'" } else { quote(layers) } }} {{ if check == "" { "" } else if os_family() == "windows" { "'" + replace(check, "'", "''") + "'" } else { quote(check) } }}
+    mise exec -- node scripts/generate-layers.mjs --runtime {{quote(runtime)}} --out {{quote(out)}} --layers {{quote(layers)}} {{ if check == "" { "" } else { quote(check) } }}
 
 # Run the model-free Pi smoke check against the resolved workspace: a stub model on loopback, no GPU, no
 # download. It reads the workspace's Pi settings and wrapper and writes nothing to the workspace.
@@ -89,7 +74,7 @@ verify-pi:
 
 # Check local Codex project-root marker behavior without a model request. Pass the native Codex executable.
 verify-codex-discovery codex:
-    mise exec -- node scripts/verify-codex-discovery.mjs --codex {{ if os_family() == "windows" { "'" + replace(codex, "'", "''") + "'" } else { quote(codex) } }}
+    mise exec -- node scripts/verify-codex-discovery.mjs --codex {{quote(codex)}}
 
 # Install the shared Lefthook hooks and assert the merged jobs (C7.8).
 hooks:

@@ -102,6 +102,8 @@ Each cell is a status and a short reason, then the evidence IDs from section 1. 
 
 Summary grid (status only; the detail below holds the reason and evidence). Generated from the detail bullets and checked against them.
 
+> **Retired:** Windows and macOS support ended on 2026-11-23 (C5.6). Linux is the only supported platform. The Windows and macOS rows and sections 2.17-2.18 keep the evidence gathered before retirement.
+
 | Row | Claude | Copilot | OpenCode | Pi | Cursor | Codex | Antigravity |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | Skills load | same | differs | differs | differs | differs | differs | differs |
@@ -287,7 +289,7 @@ The macOS row marks live harness behavior as unverified; it does not mean fixtur
 - Codex: **same**. The live probe 2026-10-20 inside T3 passed all five checks: skills, workspace instructions, an allowed read, a denied write, and a subagent reply. Evidence: LIVE-1020.
 - Antigravity: **differs**. T3 runs Antigravity (the `antigravity` instance, gemini-3.8-flash-low); the live probe 2026-10-21 completed turns in three sessions, but they loaded no workspace skills, instructions, or gate. Use it as a read-only helper in `t3.readOnlyInstances`. Evidence: MS-T3 (Cursor and Antigravity), LIVE-1021.
 
-### 2.17 Windows
+### 2.17 Windows (retired 2026-11-23)
 
 The installer fixture lifecycle runs in the `test-node-shard` matrix and is required by `test-node`. It covers install, strict status, reapply, Copilot removal, and uninstall for the seven runtimes listed below; it does not verify live CLI or hook behavior.
 
@@ -299,29 +301,29 @@ The installer fixture lifecycle runs in the `test-node-shard` matrix and is requ
 - Codex: **not built yet**. `codex-hooks.json` has a `commandWindows` entry that was never run. Evidence: PSC-CXH.
 - Antigravity: **differs**. The live probe 2026-10-21 ran three T3 sessions on Windows 11, but workspace skills, instructions, and the gate did not load. Standalone app and CLI behavior is untested. Evidence: LIVE-1021.
 
-### 2.18 macOS
+### 2.18 macOS (retired 2026-11-23)
 
 The `test-macos` CI job runs POSIX installer fixture lifecycles for all seven runtimes outside the required `test-node` aggregate. It is not configured with `continue-on-error`, so a failure makes the workflow run fail. These fixture checks do not verify live CLI or hook behavior.
 
-- Claude: **unverified**. The fixture verifies the macOS installer lifecycle; real Mac CLI and hook behavior remain unverified. Evidence: `test-macos`, `scripts/Install-Workspace.macos.test.mjs`.
-- Copilot: **unverified**. The fixture verifies executable `copilot.sh`, ordered plugin arguments, forwarding, status, and removal; real CLI and hook behavior remain unverified. Evidence: `test-macos`, `scripts/Install-Workspace.macos.test.mjs`.
-- OpenCode: **unverified**. The fixture verifies copied plugin files and lifecycle; live OpenCode behavior is unverified. Evidence: `test-macos`, `scripts/Install-Workspace.macos.test.mjs`.
-- Pi: **unverified**. The fixture verifies executable `pi.sh`, its agent directory and argument forwarding, plus lifecycle; live Pi behavior is unverified. Evidence: `test-macos`, `scripts/Install-Workspace.macos.test.mjs`.
-- Cursor: **unverified**. The fixture verifies the `.cursor/skills` projection and lifecycle; live Cursor behavior is unverified. Evidence: `test-macos`, `scripts/Install-Workspace.macos.test.mjs`.
-- Codex: **unverified**. The fixture verifies the `.agents/skills` projection and lifecycle; live Codex behavior is unverified. Evidence: `test-macos`, `scripts/Install-Workspace.macos.test.mjs`.
-- Antigravity: **unverified**. The fixture verifies the shared `.agents/skills` projection and lifecycle; live Antigravity behavior is unverified. Evidence: `test-macos`, `scripts/Install-Workspace.macos.test.mjs`.
+- Claude: **unverified**. The fixture verifies the macOS installer lifecycle; real Mac CLI and hook behavior remain unverified. Evidence: `test-macos`, `scripts/Install-Workspace.posix.test.mjs`.
+- Copilot: **unverified**. The fixture verifies executable `copilot.sh`, ordered plugin arguments, forwarding, status, and removal; real CLI and hook behavior remain unverified. Evidence: `test-macos`, `scripts/Install-Workspace.posix.test.mjs`.
+- OpenCode: **unverified**. The fixture verifies copied plugin files and lifecycle; live OpenCode behavior is unverified. Evidence: `test-macos`, `scripts/Install-Workspace.posix.test.mjs`.
+- Pi: **unverified**. The fixture verifies executable `pi.sh`, its agent directory and argument forwarding, plus lifecycle; live Pi behavior is unverified. Evidence: `test-macos`, `scripts/Install-Workspace.posix.test.mjs`.
+- Cursor: **unverified**. The fixture verifies the `.cursor/skills` projection and lifecycle; live Cursor behavior is unverified. Evidence: `test-macos`, `scripts/Install-Workspace.posix.test.mjs`.
+- Codex: **unverified**. The fixture verifies the `.agents/skills` projection and lifecycle; live Codex behavior is unverified. Evidence: `test-macos`, `scripts/Install-Workspace.posix.test.mjs`.
+- Antigravity: **unverified**. The fixture verifies the shared `.agents/skills` projection and lifecycle; live Antigravity behavior is unverified. Evidence: `test-macos`, `scripts/Install-Workspace.posix.test.mjs`.
 
 ### 2.19 Linux
 
-The `test-linux` CI job runs the same POSIX installer fixture lifecycle as macOS for all seven runtimes, outside the required `test-node` aggregate. It is not configured with `continue-on-error`, so a failure makes the workflow run fail. These fixture checks do not verify live CLI or hook behavior.
+The `test-linux` job in the `portable` workflow runs the POSIX installer fixture lifecycle for all seven runtimes on `ubuntu-24.04`, outside the required `test` and `test-node` jobs. It is not configured with `continue-on-error`, so a failure makes the workflow run fail. These fixture checks do not verify live CLI or hook behavior.
 
-- Claude: **unverified**. The fixture verifies the Linux installer lifecycle; real Linux CLI and hook behavior remain unverified. Evidence: `test-linux`, `scripts/Install-Workspace.macos.test.mjs`.
-- Copilot: **unverified**. The fixture verifies executable `copilot.sh`, ordered plugin arguments, forwarding, status, and removal; real CLI and hook behavior remain unverified. Evidence: `test-linux`, `scripts/Install-Workspace.macos.test.mjs`.
-- OpenCode: **unverified**. The fixture verifies copied plugin files and lifecycle; live OpenCode behavior is unverified. Evidence: `test-linux`, `scripts/Install-Workspace.macos.test.mjs`.
-- Pi: **unverified**. The fixture verifies executable `pi.sh`, its agent directory and argument forwarding, plus lifecycle; live Pi behavior is unverified. Evidence: `test-linux`, `scripts/Install-Workspace.macos.test.mjs`.
-- Cursor: **unverified**. The fixture verifies the `.cursor/skills` projection and lifecycle; live Cursor behavior is unverified. Evidence: `test-linux`, `scripts/Install-Workspace.macos.test.mjs`.
-- Codex: **unverified**. The fixture verifies the `.agents/skills` projection and lifecycle; live Codex behavior is unverified. Evidence: `test-linux`, `scripts/Install-Workspace.macos.test.mjs`.
-- Antigravity: **unverified**. The fixture verifies the shared `.agents/skills` projection and lifecycle; live Antigravity behavior is unverified. Evidence: `test-linux`, `scripts/Install-Workspace.macos.test.mjs`.
+- Claude: **unverified**. The fixture verifies the Linux installer lifecycle; real Linux CLI and hook behavior remain unverified. Evidence: `test-linux`, `scripts/Install-Workspace.posix.test.mjs`.
+- Copilot: **unverified**. The fixture verifies executable `copilot.sh`, ordered plugin arguments, forwarding, status, and removal; real CLI and hook behavior remain unverified. Evidence: `test-linux`, `scripts/Install-Workspace.posix.test.mjs`.
+- OpenCode: **unverified**. The fixture verifies copied plugin files and lifecycle; live OpenCode behavior is unverified. Evidence: `test-linux`, `scripts/Install-Workspace.posix.test.mjs`.
+- Pi: **unverified**. The fixture verifies executable `pi.sh`, its agent directory and argument forwarding, plus lifecycle; live Pi behavior is unverified. Evidence: `test-linux`, `scripts/Install-Workspace.posix.test.mjs`.
+- Cursor: **unverified**. The fixture verifies the `.cursor/skills` projection and lifecycle; live Cursor behavior is unverified. Evidence: `test-linux`, `scripts/Install-Workspace.posix.test.mjs`.
+- Codex: **unverified**. The fixture verifies the `.agents/skills` projection and lifecycle; live Codex behavior is unverified. Evidence: `test-linux`, `scripts/Install-Workspace.posix.test.mjs`.
+- Antigravity: **unverified**. The fixture verifies the shared `.agents/skills` projection and lifecycle; live Antigravity behavior is unverified. Evidence: `test-linux`, `scripts/Install-Workspace.posix.test.mjs`.
 
 ## 3. Known intentional differences
 
@@ -361,9 +363,9 @@ G3. Gate fail-open paths are unmeasured or silent. Claude: a hook killed at Clau
 
 G4. OpenCode passed the live probe 2026-10-21, and Pi passed the same probe on 2026-10-20. These checks cover skills, workspace instructions, an allowed read, a denied write, and a subagent reply. The ask-level check in section 5.2 remains open. Evidence: LIVE-1020, LIVE-1021.
 
-G5. POSIX installer fixture lifecycles run in the macOS and Linux CI jobs for all seven runtimes (rows 2.18-2.19). Both jobs are outside the required `test-node` aggregate and have no `continue-on-error`, so a failure makes the workflow run fail. Branch protection requirements are not established by repository evidence. These fixtures do not establish live macOS CLI or hook behavior, which remains unverified and explicitly deferred. Evidence: `.github/workflows/ci.yml` (`test-macos`, `test-linux`), `justfile` (`test-macos`, `test-posix`), and `scripts/Install-Workspace.macos.test.mjs`.
+G5. The POSIX installer fixture lifecycle runs in the Linux `test-linux` job of the `portable` workflow for all seven runtimes (row 2.19). The job is outside the required `test` and `test-node` jobs and has no `continue-on-error`, so a failure makes the workflow run fail. Branch protection requirements are not established by repository evidence. These fixtures do not establish live Linux CLI or hook behavior, which remains unverified. Evidence: `.github/workflows/portable.yml` (`test-linux`), `justfile` (`test-linux`), and `scripts/Install-Workspace.posix.test.mjs`.
 
-G6. Pi and OpenCode resolve `%USERPROFILE%\.agents\skills` through default skill discovery, so the resolved skill set is not only the pinned one (rows 2.1, 2.17). The 2026-10-09 Pi spike found 40 skills. `PI_CODING_AGENT_DIR` does not isolate them, and redirecting `USERPROFILE` would move the login. An OpenCode 2.0.30 smoke found 41 skills there beside 61 PStack skills. The OpenCode config directory does not move that root, and the Claude Code skill flags do not gate it. Evidence: MS-T3 (Pi, Known limits; OpenCode, Global skills and clean sessions). Fix: test whether Pi's `skills` setting can exclude that path; the OpenCode root is an unresolved isolation limit, and accepting it as a risk is an owner decision.
+G6. Pi and OpenCode resolve `~/.agents/skills` through default skill discovery, so the resolved skill set is not only the pinned one (row 2.1). The 2026-10-09 Pi spike found 40 skills. `PI_CODING_AGENT_DIR` does not isolate them, and redirecting `HOME` would move the login. An OpenCode 2.0.30 smoke found 41 skills there beside 61 PStack skills. The OpenCode config directory does not move that root, and the Claude Code skill flags do not gate it. Evidence: MS-T3 (Pi, Known limits; OpenCode, Global skills and clean sessions). Fix: test whether Pi's `skills` setting can exclude that path; the OpenCode root is an unresolved isolation limit, and accepting it as a risk is an owner decision.
 
 G7. The Copilot hook files on pstack `main` do not match the contract the org README requires (row 2.8, 2.10). Main's `copilot-hooks.json` uses a single `command` key per entry and has no PowerShell entry. The fork (the pin) uses `bash` and `powershell` keys. If the pin moves back to main, the Copilot wiring changes shape; no install check recorded in MS-INST reads these hook keys, so the change would not show at install time. Evidence: PSC-CPH (main), FORK-CPH, ORG (GitHub Copilot CLI build). Fix: land the fork's hooks file upstream or pin only commits where the contract holds; add a test that reads the pinned file's keys.
 
