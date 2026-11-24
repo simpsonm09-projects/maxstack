@@ -19,6 +19,16 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const helper = join(root, 'scripts', 'Install-T3Settings.ps1');
 const ordinal = join(root, 'scripts', 'Install-Ordinal.ps1');
 const shell = 'pwsh';
+// The report tests run the PowerShell helper directly; this one compares Windows wrapper paths.
+const windowsOnly =
+  process.platform === 'win32' ? false : 'the assertion names Windows-only wrapper paths';
+
+function findPython() {
+  for (const name of ['python', 'python3']) {
+    if (spawnSync(name, ['--version'], { windowsHide: true }).status === 0) return name;
+  }
+  return null;
+}
 
 function runReport(file, workspace, stop = false) {
   return runReportWithHelper(file, workspace, helper, stop);
@@ -466,7 +476,7 @@ test('local T3 contract comparison accepts an explicit fixture source', () => {
     );
     const env = { ...process.env, PYTHONDONTWRITEBYTECODE: '1' };
     const python = spawnSync(
-      'python',
+      findPython() ?? 'python',
       [join(root, 'scripts', 'verify-manifests.py'), '--t3-contract', source],
       { cwd: root, windowsHide: true, encoding: 'utf8', env },
     );
@@ -844,80 +854,84 @@ test('legacy config enabled folds into the envelope with false winning and stabl
   }
 });
 
-test('drift report emits matching, differs, missing, unset, unverifiable, extra, unknown, and excluded states', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'maxstack-t3-'));
-  try {
-    const workspace = join(dir, 'workspace');
-    mkdirSync(join(workspace, '.claude', 'plugins'), { recursive: true });
-    const input = join(dir, 'settings.json');
-    const providers = {
-      claudeWorkspace: {
-        driver: 'claudeAgent',
-        enabled: true,
-        config: {
-          binaryPath: 'claude',
-          launchArgs: `--plugin-dir ${join(workspace, '.claude', 'plugins')}`,
+test(
+  'drift report emits matching, differs, missing, unset, unverifiable, extra, unknown, and excluded states',
+  { skip: windowsOnly },
+  () => {
+    const dir = mkdtempSync(join(tmpdir(), 'maxstack-t3-'));
+    try {
+      const workspace = join(dir, 'workspace');
+      mkdirSync(join(workspace, '.claude', 'plugins'), { recursive: true });
+      const input = join(dir, 'settings.json');
+      const providers = {
+        claudeWorkspace: {
+          driver: 'claudeAgent',
+          enabled: true,
+          config: {
+            binaryPath: 'claude',
+            launchArgs: `--plugin-dir ${join(workspace, '.claude', 'plugins')}`,
+          },
         },
-      },
-      copilotWorkspace: {
-        driver: 'acpRegistry',
-        enabled: true,
-        config: {
-          source: 'registry',
-          agentId: 'github-copilot-cli',
-          distribution: 'auto',
-          commandPath: join(workspace, '.maxstack', 'bin', 'copilot.cmd'),
+        copilotWorkspace: {
+          driver: 'acpRegistry',
+          enabled: true,
+          config: {
+            source: 'registry',
+            agentId: 'github-copilot-cli',
+            distribution: 'auto',
+            commandPath: join(workspace, '.maxstack', 'bin', 'copilot.cmd'),
+          },
         },
-      },
-      piWorkspace: {
-        driver: 'pi',
-        enabled: true,
-        config: { binaryPath: join(workspace, '.maxstack', 'bin', 'pi.cmd'), launchArgs: '' },
-      },
-      codexUser: {
-        driver: 'codex',
-        enabled: true,
-        config: { binaryPath: 'codex', launchArgs: '' },
-      },
-    };
-    const live = {
-      defaultAutoPull: false,
-      responseStreamingMode: 'sentence',
-      github: { token: 'hidden' },
-      unknownSetting: 'hidden',
-      providerInstances: providers,
-    };
-    writeFileSync(input, JSON.stringify(live));
-    const result = runReport(input, workspace);
-    assert.equal(result.status, 0, result.stderr);
-    const report = JSON.parse(result.stdout);
-    const states = Object.fromEntries(report.drift.map((item) => [item.id, item.state]));
-    assert.equal(states['claude{Workspace}'], 'matching');
-    assert.equal(states['copilot{Workspace}'], 'matching');
-    assert.equal(states['pi{Workspace}'], 'matching');
-    assert.equal(states.defaultAutoPull, 'differs');
-    assert.equal(report.drift.find((item) => item.id === 'defaultAutoPull').wanted, true);
-    assert.equal(report.drift.find((item) => item.id === 'defaultAutoPull').observed, false);
-    assert.equal(states.defaultThreadEnvMode, 'differs');
-    assert.ok(report.drift.some((item) => item.state === 'extra'));
-    assert.ok(report.strictFailures.includes('differs'));
-    assert.ok(report.strictFailures.includes('unknown'));
-    assert.ok(report.strictFailures.includes('unverifiable'));
-    assert.doesNotMatch(result.stdout + result.stderr, /hidden|codexUser/);
+        piWorkspace: {
+          driver: 'pi',
+          enabled: true,
+          config: { binaryPath: join(workspace, '.maxstack', 'bin', 'pi.cmd'), launchArgs: '' },
+        },
+        codexUser: {
+          driver: 'codex',
+          enabled: true,
+          config: { binaryPath: 'codex', launchArgs: '' },
+        },
+      };
+      const live = {
+        defaultAutoPull: false,
+        responseStreamingMode: 'sentence',
+        github: { token: 'hidden' },
+        unknownSetting: 'hidden',
+        providerInstances: providers,
+      };
+      writeFileSync(input, JSON.stringify(live));
+      const result = runReport(input, workspace);
+      assert.equal(result.status, 0, result.stderr);
+      const report = JSON.parse(result.stdout);
+      const states = Object.fromEntries(report.drift.map((item) => [item.id, item.state]));
+      assert.equal(states['claude{Workspace}'], 'matching');
+      assert.equal(states['copilot{Workspace}'], 'matching');
+      assert.equal(states['pi{Workspace}'], 'matching');
+      assert.equal(states.defaultAutoPull, 'differs');
+      assert.equal(report.drift.find((item) => item.id === 'defaultAutoPull').wanted, true);
+      assert.equal(report.drift.find((item) => item.id === 'defaultAutoPull').observed, false);
+      assert.equal(states.defaultThreadEnvMode, 'differs');
+      assert.ok(report.drift.some((item) => item.state === 'extra'));
+      assert.ok(report.strictFailures.includes('differs'));
+      assert.ok(report.strictFailures.includes('unknown'));
+      assert.ok(report.strictFailures.includes('unverifiable'));
+      assert.doesNotMatch(result.stdout + result.stderr, /hidden|codexUser/);
 
-    delete live.providerInstances.piWorkspace;
-    live.providerInstances.claudeWorkspace.config.launchArgs = '--api-key private-value';
-    writeFileSync(input, JSON.stringify(live));
-    const changed = JSON.parse(runReport(input, workspace).stdout);
-    const changedStates = Object.fromEntries(changed.drift.map((item) => [item.id, item.state]));
-    assert.equal(changedStates['pi{Workspace}'], 'missing');
-    assert.equal(changedStates['claude{Workspace}'], 'unverifiable');
-    assert.ok(changed.strictFailures.includes('missing'));
-    assert.doesNotMatch(JSON.stringify(changed), /private-value/);
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-});
+      delete live.providerInstances.piWorkspace;
+      live.providerInstances.claudeWorkspace.config.launchArgs = '--api-key private-value';
+      writeFileSync(input, JSON.stringify(live));
+      const changed = JSON.parse(runReport(input, workspace).stdout);
+      const changedStates = Object.fromEntries(changed.drift.map((item) => [item.id, item.state]));
+      assert.equal(changedStates['pi{Workspace}'], 'missing');
+      assert.equal(changedStates['claude{Workspace}'], 'unverifiable');
+      assert.ok(changed.strictFailures.includes('missing'));
+      assert.doesNotMatch(JSON.stringify(changed), /private-value/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  },
+);
 
 test('workspace instance suffixes start with a letter and stay within the documented limit', () => {
   const dir = mkdtempSync(join(tmpdir(), 'maxstack-t3-'));
@@ -1038,136 +1052,140 @@ test('unknown credential key names redact before truncation and across punctuati
   }
 });
 
-test('provider instances, configs, and ACP argument shapes fail closed without leaking values', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'maxstack-t3-shapes-'));
-  try {
-    const workspace = join(dir, 'workspace');
-    mkdirSync(workspace);
-    const input = join(dir, 'settings.json');
-    const badPath = join(
-      workspace,
-      '.claude',
-      `plugins${String.fromCharCode(0)}${['fixture', 'path', String(Math.random())].join('_')}`,
-    );
-    const fixtures = [
-      { providerInstances: 'private provider map' },
-      { providerInstances: { badInstance: ['private instance'] } },
-      { providerInstances: { badConfig: { driver: 'claudeAgent', config: 'private config' } } },
-      {
-        providerInstances: {
-          badLaunchType: {
-            driver: 'claudeAgent',
-            config: { launchArgs: ['--plugin-dir', badPath] },
-          },
-        },
-      },
-      {
-        providerInstances: {
-          badLaunchSyntax: {
-            driver: 'claudeAgent',
-            config: { launchArgs: '--other private-argument' },
-          },
-        },
-      },
-      {
-        providerInstances: {
-          badAcpArgsType: {
-            driver: 'acpRegistry',
-            config: { agentId: 'github-copilot-cli', commandArgs: 'private argument' },
-          },
-        },
-      },
-      {
-        providerInstances: {
-          badAcpArgsFlag: {
-            driver: 'acpRegistry',
-            config: {
-              agentId: 'github-copilot-cli',
-              commandArgs: ['--other', join(workspace, '.claude', 'plugins')],
-            },
-          },
-        },
-      },
-      {
-        providerInstances: {
-          badAcpArgsPath: {
-            driver: 'acpRegistry',
-            config: { agentId: 'github-copilot-cli', commandArgs: ['--plugin-dir', 7] },
-          },
-        },
-      },
-      {
-        providerInstances: {
-          badAcpId: {
-            driver: 'acpRegistry',
-            config: { agentId: 'fixture-agent', commandArgs: [] },
-          },
-        },
-      },
-    ];
-    for (const fixture of fixtures) {
-      writeFileSync(input, JSON.stringify(fixture));
-      const result = runReport(input, workspace, true);
-      assert.equal(result.status, 0, result.stderr);
-      assert.equal(result.stderr, '');
-      assert.doesNotMatch(
-        result.stdout + result.stderr,
-        /private provider map|private instance|private config|private argument|fixture-agent/,
+test(
+  'provider instances, configs, and ACP argument shapes fail closed without leaking values',
+  { timeout: 120_000 },
+  () => {
+    const dir = mkdtempSync(join(tmpdir(), 'maxstack-t3-shapes-'));
+    try {
+      const workspace = join(dir, 'workspace');
+      mkdirSync(workspace);
+      const input = join(dir, 'settings.json');
+      const badPath = join(
+        workspace,
+        '.claude',
+        `plugins${String.fromCharCode(0)}${['fixture', 'path', String(Math.random())].join('_')}`,
       );
-      assert.ok(JSON.parse(result.stdout).strictFailures.includes('unverifiable'));
+      const fixtures = [
+        { providerInstances: 'private provider map' },
+        { providerInstances: { badInstance: ['private instance'] } },
+        { providerInstances: { badConfig: { driver: 'claudeAgent', config: 'private config' } } },
+        {
+          providerInstances: {
+            badLaunchType: {
+              driver: 'claudeAgent',
+              config: { launchArgs: ['--plugin-dir', badPath] },
+            },
+          },
+        },
+        {
+          providerInstances: {
+            badLaunchSyntax: {
+              driver: 'claudeAgent',
+              config: { launchArgs: '--other private-argument' },
+            },
+          },
+        },
+        {
+          providerInstances: {
+            badAcpArgsType: {
+              driver: 'acpRegistry',
+              config: { agentId: 'github-copilot-cli', commandArgs: 'private argument' },
+            },
+          },
+        },
+        {
+          providerInstances: {
+            badAcpArgsFlag: {
+              driver: 'acpRegistry',
+              config: {
+                agentId: 'github-copilot-cli',
+                commandArgs: ['--other', join(workspace, '.claude', 'plugins')],
+              },
+            },
+          },
+        },
+        {
+          providerInstances: {
+            badAcpArgsPath: {
+              driver: 'acpRegistry',
+              config: { agentId: 'github-copilot-cli', commandArgs: ['--plugin-dir', 7] },
+            },
+          },
+        },
+        {
+          providerInstances: {
+            badAcpId: {
+              driver: 'acpRegistry',
+              config: { agentId: 'fixture-agent', commandArgs: [] },
+            },
+          },
+        },
+      ];
+      for (const fixture of fixtures) {
+        writeFileSync(input, JSON.stringify(fixture));
+        const result = runReport(input, workspace, true);
+        assert.equal(result.status, 0, result.stderr);
+        assert.equal(result.stderr, '');
+        assert.doesNotMatch(
+          result.stdout + result.stderr,
+          /private provider map|private instance|private config|private argument|fixture-agent/,
+        );
+        assert.ok(JSON.parse(result.stdout).strictFailures.includes('unverifiable'));
+      }
+
+      writeFileSync(
+        input,
+        JSON.stringify({
+          providerInstances: {
+            copilotExtra: {
+              driver: 'acpRegistry',
+              config: {
+                agentId: 'github-copilot-cli',
+                commandArgs: ['--plugin-dir', join(workspace, '.claude', 'plugins')],
+              },
+            },
+          },
+        }),
+      );
+      const valid = JSON.parse(runReport(input, workspace).stdout);
+      assert.deepEqual(valid.snapshot.providerInstances.mapextra1.config.commandArgs, [
+        '--plugin-dir',
+        '{workspace}/.claude/plugins',
+      ]);
+
+      const expectedArgs =
+        "$script:T3DefaultsTemplate.instances['copilot{Workspace}'].config.commandArgs = @('--plugin-dir', '{workspace}/.claude/plugins')";
+      writeFileSync(
+        input,
+        JSON.stringify({
+          providerInstances: {
+            copilotWorkspace: {
+              driver: 'acpRegistry',
+              enabled: true,
+              config: {
+                source: 'registry',
+                agentId: 'github-copilot-cli',
+                distribution: 'auto',
+                commandPath: join(workspace, '.maxstack', 'bin', 'copilot.cmd'),
+                commandArgs: ['--plugin-dir', join(workspace, '.claude', 'plugins')],
+              },
+            },
+          },
+        }),
+      );
+      const known = JSON.parse(
+        runReportWithHelper(input, workspace, helper, false, expectedArgs).stdout,
+      );
+      assert.deepEqual(known.snapshot.providerInstances['copilot{Workspace}'].config.commandArgs, [
+        '--plugin-dir',
+        '{workspace}/.claude/plugins',
+      ]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
     }
-
-    writeFileSync(
-      input,
-      JSON.stringify({
-        providerInstances: {
-          copilotExtra: {
-            driver: 'acpRegistry',
-            config: {
-              agentId: 'github-copilot-cli',
-              commandArgs: ['--plugin-dir', join(workspace, '.claude', 'plugins')],
-            },
-          },
-        },
-      }),
-    );
-    const valid = JSON.parse(runReport(input, workspace).stdout);
-    assert.deepEqual(valid.snapshot.providerInstances.mapextra1.config.commandArgs, [
-      '--plugin-dir',
-      '{workspace}/.claude/plugins',
-    ]);
-
-    const expectedArgs =
-      "$script:T3DefaultsTemplate.instances['copilot{Workspace}'].config.commandArgs = @('--plugin-dir', '{workspace}/.claude/plugins')";
-    writeFileSync(
-      input,
-      JSON.stringify({
-        providerInstances: {
-          copilotWorkspace: {
-            driver: 'acpRegistry',
-            enabled: true,
-            config: {
-              source: 'registry',
-              agentId: 'github-copilot-cli',
-              distribution: 'auto',
-              commandPath: join(workspace, '.maxstack', 'bin', 'copilot.cmd'),
-              commandArgs: ['--plugin-dir', join(workspace, '.claude', 'plugins')],
-            },
-          },
-        },
-      }),
-    );
-    const known = JSON.parse(
-      runReportWithHelper(input, workspace, helper, false, expectedArgs).stdout,
-    );
-    assert.deepEqual(known.snapshot.providerInstances['copilot{Workspace}'].config.commandArgs, [
-      '--plugin-dir',
-      '{workspace}/.claude/plugins',
-    ]);
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-});
+  },
+);
 
 test('known driver defaults fill missing config fields and unknown wanted fields stay unset', () => {
   const dir = mkdtempSync(join(tmpdir(), 'maxstack-t3-config-defaults-'));

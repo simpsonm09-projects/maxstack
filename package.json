@@ -1,0 +1,9 @@
+{
+  "name": "maxstack",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "bun test",
+    "test:install": "bun test scripts/Install-Workspace.*.test.mjs scripts/T3Settings.test.mjs"
+  }
+}

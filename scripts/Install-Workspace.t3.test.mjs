@@ -10,6 +10,7 @@ import {
   runInstaller,
   runStatus,
   shell,
+  windowsOnly,
   withWorkspace,
   writeWorkspaceSettings,
 } from './lib/installer-test-kit.mjs';
@@ -244,7 +245,7 @@ test('strict status fails for malformed explicitly selected T3 settings while pl
   });
 });
 
-test('snapshot staleness alone is informational under strict status', () => {
+test('snapshot staleness alone is informational under strict status', { skip: windowsOnly }, () => {
   withWorkspace('T3 snapshot stale status', (ctx) => {
     const source = join(ctx.base, 'settings.json');
     const workspaceSlug = 'Simpsonm09';

@@ -41,6 +41,7 @@ import {
   normalizePiWrapperLock,
   ownedRecord,
   plainOutput,
+  psShell,
   problemRows,
   python,
   readJson,
@@ -60,6 +61,7 @@ import {
   testEnvironment,
   withHook,
   withMainCommit,
+  withWindowsWorkspace,
   withWorkspace,
   withWorkspaceNeeding,
   writeFile,
@@ -605,7 +607,7 @@ withWorkspace(
   {},
 );
 
-withWorkspace(
+withWindowsWorkspace(
   'a settings file held open by another process gives one friendly line, not a .NET exception',
   (ctx) => {
     const path = join(ctx.workspace, 'maxstack.settings.json');
@@ -1067,7 +1069,7 @@ withWorkspace(
     assert.notEqual(apply.status, 0);
     assert.match(
       plainOutput(apply),
-      /maxstack\.settings\.json: layers\.pstack\.source resolves to no folder at .*missing-source\. Fix it there, or repair with: pwsh -File scripts\/Install-Workspace\.ps1 -Source pstack=default -Apply/,
+      /maxstack\.settings\.json: layers\.pstack\.source resolves to no folder at .*missing-source\. Fix it there, or repair with: (?:pwsh -File scripts\/Install-Workspace\.ps1|bun scripts\/install\/main\.ts) -Source pstack=default -Apply/,
     );
     assert.equal(readFileSync(lockPath, 'utf8'), before);
     assert.deepEqual(
@@ -1124,8 +1126,14 @@ withWorkspace(
       ['local:../sentinel', /unsafe local path/],
       [`local:bad${String.fromCharCode(127)}path`, /holds the character \\u007F/],
       ['https://host/repo.git@invalid ref', /non-empty source string|supported source/],
-      ['local:C:relative', /unsafe local path/],
-      ['local:\\rooted', /unsafe local path/],
+      // A drive-relative or single-backslash path is refused by the Windows rules alone; on POSIX it is a plain
+      // relative path, which the traversal rule alone judges.
+      ...(process.platform === 'win32'
+        ? [
+            ['local:C:relative', /unsafe local path/],
+            ['local:\\rooted', /unsafe local path/],
+          ]
+        : []),
     ];
     for (const [source, message] of invalidSources) {
       writeWorkspaceSettings(ctx, { version: 1, layers: { pstack: { source } } });
@@ -1198,7 +1206,7 @@ withWorkspace(
 );
 
 // Finding 4: a root-relative local path with one leading slash is refused by the settings reader, and by -Source.
-withWorkspace(
+withWindowsWorkspace(
   'finding 4: a root-relative local path with one leading slash is refused by settings and -Source',
   (ctx) => {
     mustApply(ctx);
@@ -1215,7 +1223,7 @@ withWorkspace(
 );
 
 // Finding 5: UNC and device-namespace text is refused by its text, in settings and in -Source and -LayerSource.
-withWorkspace(
+withWindowsWorkspace(
   'finding 5: UNC and device-namespace local paths are refused by their text, in settings and in -Source',
   (ctx) => {
     mustApply(ctx);
@@ -1295,7 +1303,7 @@ withWorkspace(
 );
 
 // Survivors of the mutation run: each test fails on the mutant its name gives.
-withWorkspace(
+withWindowsWorkspace(
   'a settings source whose folder cannot be listed is unavailable in a read-only run, and refused by apply',
   (ctx) => {
     mustApply(ctx);
@@ -1367,7 +1375,7 @@ withWorkspace(
       `$traversal = Get-SettingsLocalSource -Name pstack -Path '../outside' -Absolute $false -WorkspaceRoot '${ws}' -RepoRoot 'C:\\nowhere-maxstack'; ` +
       `"TRAVERSAL=$($traversal.reason)"; "UNREADABLE=$(Test-SettingsLocalReadable -Path '${ws}\\missing-for-probe')"; ` +
       `"EXTERNAL=$(ConvertTo-InitSettingsSpec -Name pstack -Source ([pscustomobject]@{ kind = 'local'; path = '${external.replaceAll("'", "''")}' }) -WorkspaceRoot '${ws}')"`;
-    const run = spawnSync(shell, ['-NoProfile', '-NonInteractive', '-Command', script], {
+    const run = spawnSync(psShell, ['-NoProfile', '-NonInteractive', '-Command', script], {
       windowsHide: true,
       encoding: 'utf8',
       env: testEnvironment(),
@@ -1402,7 +1410,7 @@ withWorkspace(
       `foreach ($pair in $pairs) { try { Assert-SettingsSource pstack $pair[1]; $settingsOk = $true } catch { $settingsOk = $false }; try { $null = Read-SourceSpec pstack $pair[1]; $sharedOk = $true } catch { $sharedOk = $false }; "PAIR=$($pair[0]);SETTINGS=$settingsOk;SHARED=$sharedOk" }; ` +
       `try { $null = Read-SourceSpec pstack 'local:relative/checkout'; 'RELATIVE=accepted' } catch { "RELATIVE=$($_.Exception.Message)" }; ` +
       `$local = Get-SettingsLayerSource -Name pstack -Spec 'local:file&name' -WorkspaceRoot '${ws}' -RepoRoot 'C:\\nowhere-maxstack'; "LOCAL=$($local.kind)"`;
-    const run = spawnSync(shell, ['-NoProfile', '-NonInteractive', '-Command', script], {
+    const run = spawnSync(psShell, ['-NoProfile', '-NonInteractive', '-Command', script], {
       windowsHide: true,
       encoding: 'utf8',
       env: testEnvironment(),
@@ -1801,19 +1809,26 @@ withWorkspace(
   'pi with no executable found warns, keeps the recorded wrappers, and its settings still list the layers',
   (ctx) => {
     mustApply(ctx);
-    assert.ok(existsSync(join(ctx.workspace, '.maxstack', 'bin', 'pi.cmd')));
+    const piWrapper = process.platform === 'win32' ? 'pi.cmd' : 'pi.sh';
+    assert.ok(existsSync(join(ctx.workspace, '.maxstack', 'bin', piWrapper)));
 
     const run = mustApply(ctx, ['-PiCommand', MISSING_PI]);
     assert.match(plainOutput(run), /Pi CLI not found/, run.stdout);
-    assert.match(plainOutput(run), /Kept .*pi\.cmd.*because Pi was not found/, run.stdout);
+    assert.match(
+      plainOutput(run),
+      new RegExp(`Kept .*${piWrapper.replace('.', '\\.')}.*because Pi was not found`),
+      run.stdout,
+    );
     assert.ok(
-      existsSync(join(ctx.workspace, '.maxstack', 'bin', 'pi.cmd')),
+      existsSync(join(ctx.workspace, '.maxstack', 'bin', piWrapper)),
       'the recorded Pi wrapper was removed for a Pi that was only missing on this run',
     );
-    assert.ok(
-      existsSync(join(ctx.workspace, '.maxstack', 'bin', 'pi.sh')),
-      'the recorded Pi script was removed for a Pi that was only missing on this run',
-    );
+    if (process.platform === 'win32') {
+      assert.ok(
+        existsSync(join(ctx.workspace, '.maxstack', 'bin', 'pi.sh')),
+        'the recorded Pi script was removed for a Pi that was only missing on this run',
+      );
+    }
     assert.ok(
       existsSync(join(ctx.workspace, '.pi', 'agent', 'settings.json')),
       'the settings were not written without the CLI',
@@ -1822,7 +1837,7 @@ withWorkspace(
     const lock = readJson(join(ctx.workspace, 'stack.lock.json'));
     assert.equal(lock.pi.enabled, true, 'the lock dropped the wrappers it still holds');
     assert.ok(
-      ownedRecord(lock, '.maxstack/bin/pi.cmd', 'file'),
+      ownedRecord(lock, `.maxstack/bin/${piWrapper}`, 'file'),
       'the lock no longer owns the kept Pi wrapper',
     );
     assert.ok(
@@ -1834,8 +1849,9 @@ withWorkspace(
 );
 
 withWorkspaceNeeding(
-  'python',
-  python,
+  // The verifier reads a junction's Windows record and both wrapper pairs, so a POSIX workspace fails it.
+  'python on Windows',
+  process.platform === 'win32' ? python : null,
   'the workspace verifier checks the Pi wrappers and the Pi settings',
   (ctx) => {
     mustApply(ctx);
@@ -2102,7 +2118,7 @@ withWorkspace(
 );
 
 // Review 2, item 7: a copy whose bytes an earlier backup already holds is not written again.
-withWorkspace(
+withWindowsWorkspace(
   'a Pi settings rewrite that repeats an earlier version writes no new numbered backup',
   (ctx) => {
     mustApply(ctx);
@@ -2263,7 +2279,7 @@ withWorkspace(
     gitRun(tree, ['init', '-q']);
     gitRun(tree, ['config', 'filter.a=b.clean', 'touch x']);
     const script = `$ErrorActionPreference = 'Stop'; . '${layerSourcesFile}'; $tree = '${tree.replace(/\\/g, '/')}'; $run = Invoke-GitGuarded -Dir $tree -Arguments @('-C', $tree, 'status', '--porcelain'); "CODE=$($run.code)"; "LEFT=[$env:GIT_CONFIG_COUNT]"`;
-    const run = spawnSync(shell, ['-NoProfile', '-NonInteractive', '-Command', script], {
+    const run = spawnSync(psShell, ['-NoProfile', '-NonInteractive', '-Command', script], {
       windowsHide: true,
       encoding: 'utf8',
       env: testEnvironment(),
