@@ -755,7 +755,7 @@ export function invokeInitSettings(
   }
   if (!stackStats || !stackStats.isFile()) {
     process.stderr.write(
-      '-InitSettings needs stack.lock.json. Copy workspace/maxstack.settings.json to the workspace, or run Install-Workspace.ps1 -Apply first.\n',
+      '-InitSettings needs stack.lock.json. Copy workspace/maxstack.settings.json to the workspace, or run bun scripts/install/main.ts -Apply first.\n',
     );
     return 1;
   }

@@ -2,8 +2,7 @@
 // that reads them: filters, git config, refs, and the child environment. Helpers come from ./lib/installer-test-kit.mjs.
 
 import assert from 'node:assert/strict';
-import { spawnSync, spawn } from 'node:child_process';
-import { createServer } from 'node:net';
+import { spawnSync } from 'node:child_process';
 import {
   writeFileSync,
   existsSync,
@@ -12,14 +11,11 @@ import {
   rmSync,
   renameSync,
   cpSync,
-  mkdtempSync,
   appendFileSync,
   utimesSync,
-  readdirSync,
-  chmodSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, dirname, parse as parsePath } from 'node:path';
+import { join, dirname } from 'node:path';
 import { test } from 'node:test';
 import {
   NPM,
@@ -39,15 +35,12 @@ import {
   githubEnv,
   independentSha,
   installedSkill,
-  installer,
   layerNamed,
-  layerSourcesFile,
   lockPath,
   moveFeat,
   mustApply,
   ownedRecord,
   plainOutput,
-  psShell,
   problemRows,
   python,
   readJson,
@@ -63,13 +56,12 @@ import {
   servedFeature,
   setLock,
   settingsPath,
-  shell,
-  skip,
   snapshotTree,
   sourceBlockIn,
   sourceBlockOf,
   sourceOf,
   testEnvironment,
+  tsInstaller,
   withWorkspace,
   withWindowsWorkspace,
   withWorkspaceNeeding,
@@ -78,69 +70,6 @@ import {
   writeLayers,
   writeWorkspaceSettings,
 } from './lib/installer-test-kit.mjs';
-
-withWorkspace(
-  'the pure git ref syntax check covers forbidden characters and path components',
-  (ctx) => {
-    const cases = [
-      { ref: '', safe: false },
-      { ref: '-leading', safe: false },
-      { ref: 'has space', safe: false },
-      { ref: 'release.LOCK', safe: true },
-      { ref: 'release.Lock/topic', safe: true },
-      { ref: 'has~tilde', safe: false },
-      { ref: 'has^caret', safe: false },
-      { ref: 'has:colon', safe: false },
-      { ref: 'has?mark', safe: false },
-      { ref: 'has*star', safe: false },
-      { ref: 'has[bracket', safe: false },
-      { ref: 'has\\backslash', safe: false },
-      { ref: 'double..dot', safe: false },
-      { ref: 'has@{open', safe: false },
-      { ref: 'double//slash', safe: false },
-      { ref: '/leading', safe: false },
-      { ref: 'trailing/', safe: false },
-      { ref: 'trailing.', safe: false },
-      { ref: '.hidden', safe: false },
-      { ref: 'folder/.hidden', safe: false },
-      { ref: 'folder/name.lock', safe: false },
-      { ref: 'valid-ref', safe: true },
-      { ref: 'feature/neutral-layer', safe: true },
-      { ref: '18791b4b8c983443033ceeacd5a21edd29145a29', safe: true },
-    ];
-    const encoded = Buffer.from(JSON.stringify(cases)).toString('base64');
-    const layerSources = join(repoRoot, 'scripts', 'Install-LayerSources.ps1').replaceAll(
-      "'",
-      "''",
-    );
-    const script = join(ctx.base, 'ref-syntax.ps1');
-    writeFileSync(
-      script,
-      `$ErrorActionPreference = 'Stop'\n. '${layerSources}'\n$cases = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${encoded}')) | ConvertFrom-Json\nforeach ($case in $cases) { if ((Test-SafeRefNameSyntax $case.ref) -ne $case.safe) { throw "unexpected ref result for '$($case.ref)'" } }\n`,
-    );
-    const run = spawnSync(psShell, ['-NoProfile', '-NonInteractive', '-File', script], {
-      windowsHide: true,
-      encoding: 'utf8',
-    });
-    assert.equal(run.status, 0, `${run.stdout}\n${run.stderr}`);
-  },
-  {},
-);
-
-test(
-  'local source grammar accepts POSIX absolute paths under the injected macOS rules',
-  { skip: !shell },
-  () => {
-    const ordinal = join(repoRoot, 'scripts', 'Install-Ordinal.ps1').replaceAll("'", "''");
-    const sources = join(repoRoot, 'scripts', 'Install-LayerSources.ps1').replaceAll("'", "''");
-    const script = `. '${ordinal}'; . '${sources}'; $result = Read-LocalGrammar -Path '/Users/name/dev/plugin' -Platform 'macOS'; if (-not $result.absolute -or $result.path -cne '/Users/name/dev/plugin') { throw 'POSIX source path was not preserved as absolute' }; $fault = Get-LocalPathTextFault -Path 'C:\\Repo\\Plugin' -Platform 'Windows'; if ($fault) { throw $fault }; $fault = Get-LocalPathTextFault -Path '\\\\server\\share\\plugin' -Platform 'Windows'; if (-not $fault -or -not $fault.Contains('UNC')) { throw 'Windows UNC source rule was not retained' }`;
-    const run = spawnSync(psShell, ['-NoProfile', '-NonInteractive', '-Command', script], {
-      windowsHide: true,
-      encoding: 'utf8',
-    });
-    assert.equal(run.status, 0, `${run.stdout}\n${run.stderr}`);
-  },
-);
 
 withWorkspace(
   'a layer source with a DEL, a C1 control, a bidi control, or NBSP is refused, and other text is not',
@@ -155,7 +84,7 @@ withWorkspace(
     ];
     for (const source of refused) {
       writeWorkspaceSettings(ctx, { version: 1, layers: { pstack: { source } } });
-      const run = runInstaller(shell, ctx, [], { apply: false });
+      const run = runInstaller(ctx, [], { apply: false });
       assert.notEqual(run.status, 0, JSON.stringify(source));
       assert.match(
         plainOutput(run),
@@ -164,7 +93,7 @@ withWorkspace(
       );
     }
     writeWorkspaceSettings(ctx, { version: 1, layers: { pstack: { source: 'local:caf\u00e9' } } });
-    assertOk(runInstaller(shell, ctx, [], { apply: false }));
+    assertOk(runInstaller(ctx, [], { apply: false }));
   },
   {},
 );
@@ -176,7 +105,7 @@ withWorkspace(
       join(ctx.workspace, 'maxstack.settings.json'),
       `{"version":1,"deep":${'['.repeat(40)}0${']'.repeat(40)}}`,
     );
-    const run = runInstaller(shell, ctx, [], { apply: false });
+    const run = runInstaller(ctx, [], { apply: false });
     assert.notEqual(run.status, 0);
     assert.match(plainOutput(run), /nested deeper than 32/);
     assert.doesNotMatch(plainOutput(run), /Comments and trailing commas/);
@@ -192,10 +121,10 @@ withWorkspace(
       join(ctx.workspace, 'maxstack.settings.json'),
       '{"version":1,"$schema":"2020-12-01T00:00:00Z"}',
     );
-    assertOk(runInstaller(shell, ctx, [], { apply: false }));
+    assertOk(runInstaller(ctx, [], { apply: false }));
 
     writeWorkspaceSettings(ctx, { version: 1, layers: { pstack: { source: '2020-12-01' } } });
-    const dateSource = runInstaller(shell, ctx, [], { apply: false });
+    const dateSource = runInstaller(ctx, [], { apply: false });
     assert.notEqual(dateSource.status, 0);
     assert.match(plainOutput(dateSource), /layers\.pstack\.source is not a supported source/);
     assert.doesNotMatch(plainOutput(dateSource), /must be a non-empty source string/);
@@ -205,14 +134,12 @@ withWorkspace(
 
 const verifySettingsScript = join(repoRoot, 'scripts', 'verify_settings.py');
 
-const psFile = (name) => join(repoRoot, 'scripts', name).replaceAll("'", "''");
-
 // Finding 1: a runtime key with a zero width joiner is refused by its escaped name, and a fresh workspace stays empty.
 withWorkspace(
   'finding 1: a runtime key with a zero width joiner is refused by its escaped name, and nothing is written',
   (ctx) => {
     writeWorkspaceSettings(ctx, { version: 1, runtimes: { claude: {}, [`pi${ZWJ}`]: {} } });
-    const run = runInstaller(shell, ctx);
+    const run = runInstaller(ctx);
     assert.notEqual(run.status, 0, plainOutput(run));
     assert.match(plainOutput(run), /runtimes key 'pi\\u200D' holds the character \\u200D/);
     assert.doesNotMatch(plainOutput(run), new RegExp(ZWJ));
@@ -233,7 +160,7 @@ withWorkspace(
     const layer = `pstack${ZWSP}`;
     for (const entry of [{}, { source: 'local:ext-b-in-ws' }]) {
       writeWorkspaceSettings(ctx, { version: 1, layers: { [layer]: entry } });
-      const run = runInstaller(shell, ctx);
+      const run = runInstaller(ctx);
       assert.notEqual(run.status, 0, plainOutput(run));
       assert.match(plainOutput(run), /layers key 'pstack\\u200B' holds the character \\u200B/);
     }
@@ -244,37 +171,6 @@ withWorkspace(
 
 // Finding 5: the refusal comes before any lookup. A lookup replaced by a probe would print its marker, so the refusal must be
 // the first thing a UNC or device path meets.
-withWindowsWorkspace(
-  'finding 5: a UNC or device path is refused by text before the local path lookup runs',
-  (ctx) => {
-    const script = String.raw`$ErrorActionPreference = 'Stop'
-. '${psFile('Install-WorkspaceDiscovery.ps1')}'
-. '${psFile('Install-Ordinal.ps1')}'
-. '${psFile('Install-LayerSources.ps1')}'
-. '${psFile('Install-Settings.ps1')}'
-$Workspace = '${ctx.workspace.replaceAll("'", "''")}'
-function Get-LocalPathFault { 'LOOKUP-REACHED' }
-foreach ($spec in @('local:\\server\share\x', 'local:\\\\?\\C:\x')) {
-  try { $null = Read-SourceSpec pstack $spec; "NO-REFUSAL $spec" } catch { "REFUSED=$($_.Exception.Message)" }
-}
-try { $null = Read-SourceSpecs -Specs @() -LayerSpecs @('pstack=\\server\share\x') -LayerNames @('pstack'); 'NO-REFUSAL layer' } catch { "LAYER=$($_.Exception.Message)" }
-`;
-    const file = join(ctx.base, 'unc-order.ps1');
-    writeFileSync(file, script);
-    const run = spawnSync(psShell, ['-NoProfile', '-NonInteractive', '-File', file], {
-      windowsHide: true,
-      encoding: 'utf8',
-      env: testEnvironment(),
-    });
-    assert.equal(run.status, 0, `${run.stdout}\n${run.stderr}`);
-    assert.doesNotMatch(run.stdout, /LOOKUP-REACHED|NO-REFUSAL/, run.stdout);
-    assert.match(run.stdout, /REFUSED=.*UNC or device path/);
-    assert.match(run.stdout, /LAYER=.*UNC or device path/);
-  },
-  {},
-);
-
-// Finding 2: a read-only audit, a -Status, and -Update -Check contact no remote for a declared git source, while an apply does.
 withWorkspace(
   'finding 2: an audit, a -Status, and an -Update -Check start no ls-remote for a declared git source',
   (ctx) => {
@@ -290,7 +186,7 @@ withWorkspace(
     const trace = join(ctx.base, 'remote-trace.txt');
     const env = { ...testEnvironment(), MAXSTACK_TEST_GITHUB_ROOT: seam, GIT_TRACE: trace };
     for (const args of [[], ['-Status'], ['-Update', '-Check']]) {
-      const run = runInstaller(shell, ctx, args, { apply: false, env });
+      const run = runInstaller(ctx, args, { apply: false, env });
       assert.ok(
         run.status === 0 || run.status === 1,
         `${args.join(' ') || 'audit'}: ${plainOutput(run)}`,
@@ -305,7 +201,7 @@ withWorkspace(
       );
       rmSync(trace, { force: true });
     }
-    const apply = runInstaller(shell, ctx, [], { apply: true, env });
+    const apply = runInstaller(ctx, [], { apply: true, env });
     assert.match(
       readFileSync(trace, 'utf8'),
       /ls-remote[^\n]*example[\\/]fixture\.git/,
@@ -338,7 +234,7 @@ withWorkspace(
     for (const char of [ZWSP, RLO, '\u0007']) {
       for (const [label, build] of positions) {
         writeWorkspaceSettings(ctx, build(char));
-        const run = runInstaller(shell, ctx, [], { apply: false });
+        const run = runInstaller(ctx, [], { apply: false });
         const text = `${run.stdout}${run.stderr}`;
         assert.notEqual(run.status, 0, `${label} ${escapedChar(char)}: ${plainOutput(run)}`);
         assert.ok(!text.includes(char), `${label} ${escapedChar(char)} printed the raw character`);
@@ -352,7 +248,7 @@ withWorkspace(
         ['-LayerSource', `pstack${char}=${join(ctx.base, 'missing-layer')}`],
       ]) {
         rmSync(join(ctx.workspace, 'maxstack.settings.json'), { force: true });
-        const run = runInstaller(shell, ctx, [flag, value], { apply: false });
+        const run = runInstaller(ctx, [flag, value], { apply: false });
         const text = `${run.stdout}${run.stderr}`;
         assert.notEqual(run.status, 0, `${flag} ${escapedChar(char)}: ${plainOutput(run)}`);
         assert.ok(!text.includes(char), `${flag} ${escapedChar(char)} printed the raw character`);
@@ -373,7 +269,7 @@ withWindowsWorkspace(
     mustApply(ctx);
     for (const source of ['local:SAMPLE~1', 'local:tools/checkout.', 'local:tools/checkout ']) {
       writeWorkspaceSettings(ctx, { version: 1, layers: { pstack: { source } } });
-      const run = runInstaller(shell, ctx, [], { apply: true });
+      const run = runInstaller(ctx, [], { apply: true });
       assert.notEqual(run.status, 0, `${source}: ${plainOutput(run)}`);
       assert.match(
         plainOutput(run),
@@ -385,12 +281,9 @@ withWindowsWorkspace(
     }
     for (const folder of ['tools\\checkout.', 'SAMPLE~1']) {
       writeWorkspaceSettings(ctx, { version: 1 });
-      const flag = runInstaller(
-        shell,
-        ctx,
-        ['-Source', `pstack=local:${join(ctx.workspace, folder)}`],
-        { apply: false },
-      );
+      const flag = runInstaller(ctx, ['-Source', `pstack=local:${join(ctx.workspace, folder)}`], {
+        apply: false,
+      });
       assert.notEqual(flag.status, 0, `-Source ${folder}: ${plainOutput(flag)}`);
       assert.match(
         plainOutput(flag),
@@ -430,7 +323,7 @@ withWorkspace(
     const layers = writeLayers(ctx, (manifest) => {
       layerNamed(manifest, 'pstack').source.commit = 'f'.repeat(40);
     });
-    const run = runInstaller(shell, ctx, [], { layersFile: layers });
+    const run = runInstaller(ctx, [], { layersFile: layers });
     assert.notEqual(run.status, 0, 'the installer accepted an unreachable pin');
     assert.match(plainOutput(run), /Could not fetch the pinned commit f{40}/);
     assert.ok(
@@ -456,7 +349,7 @@ withWorkspace(
     const moved = `${ctx.fixture.dir}-moved`;
     renameSync(ctx.fixture.dir, moved);
     try {
-      const run = runInstaller(shell, ctx);
+      const run = runInstaller(ctx);
       assert.equal(run.status, 0, `offline re-apply failed\n${run.stdout}\n${run.stderr}`);
       const lock = readJson(join(ctx.workspace, 'stack.lock.json'));
       const pstack = lock.layers.find((record) => record.name === 'pstack');
@@ -524,7 +417,7 @@ withWorkspace(
       `org-ai-plugin=${join(ctx.workspace, 'projects/repos/org-ai-plugin')},` +
         `personal-ai-plugin=${join(ctx.workspace, 'projects/repos/personal-ai-plugin')}`,
     ];
-    const run = runInstaller(shell, ctx, args, { apply: false, layersFile: null });
+    const run = runInstaller(ctx, args, { apply: false, layersFile: null });
     assert.equal(run.status, 0, `${run.stdout}\n${run.stderr}`);
     assert.match(run.stdout, /plugins[\\/]pstack: missing/);
     // The pinned cache is not synced in audit, so the Pi settings cannot be checked yet.
@@ -637,7 +530,7 @@ withWorkspace(
       layerNamed(manifest, 'pstack').source.commit = moved;
     });
 
-    const run = runInstaller(shell, ctx, ['-Status'], { apply: false, layersFile: layers });
+    const run = runInstaller(ctx, ['-Status'], { apply: false, layersFile: layers });
     assert.equal(run.status, 0, run.stderr);
     const problems = problemRows(run);
     assert.ok(problems.length > 0, run.stdout);
@@ -745,7 +638,7 @@ withWorkspace(
   'malformed -Source specs and unknown layers are refused before anything is written',
   (ctx) => {
     for (const [spec, reason] of REFUSED_SOURCES) {
-      const run = runInstaller(shell, ctx, ['-Source', spec]);
+      const run = runInstaller(ctx, ['-Source', spec]);
       assert.notEqual(run.status, 0, `the installer accepted -Source ${spec}`);
       assert.match(plainOutput(run), new RegExp(reason), `${spec}: ${run.stdout}\n${run.stderr}`);
       assert.equal(existsSync(lockPath(ctx)), false, `${spec} wrote a lock`);
@@ -768,7 +661,7 @@ withWorkspace(
       join(ctx.workspace, '.claude', 'cache'),
     ]) {
       mkdirSync(folder, { recursive: true });
-      const run = runInstaller(shell, ctx, ['-Source', `org-ai-plugin=local:${folder}`]);
+      const run = runInstaller(ctx, ['-Source', `org-ai-plugin=local:${folder}`]);
       assert.notEqual(run.status, 0, `the installer accepted ${folder}`);
       assert.match(plainOutput(run), /cannot be a layer source/, run.stdout);
     }
@@ -783,7 +676,6 @@ withWorkspace(
     mustApply(ctx);
     const before = snapshotTree(ctx.workspace);
     const run = runInstaller(
-      shell,
       ctx,
       ['-Source', 'pstack=https://127.0.0.1:1/simpsonm09/pstack-max.git@feat'],
       { env: githubEnv(ctx) },
@@ -803,12 +695,9 @@ withWorkspace(
   '-Status, -Remove, and -Uninstall refuse -Source, which only an apply or an audit takes',
   (ctx) => {
     for (const args of [['-Status'], ['-Remove', '-Layers', 'pstack'], ['-Uninstall']]) {
-      const run = runInstaller(
-        shell,
-        ctx,
-        [...args, '-Source', 'pstack=simpsonm09/pstack-max@feat'],
-        { apply: false },
-      );
+      const run = runInstaller(ctx, [...args, '-Source', 'pstack=simpsonm09/pstack-max@feat'], {
+        apply: false,
+      });
       assert.notEqual(run.status, 0, `${args.join(' ')} accepted -Source`);
       assert.match(
         plainOutput(run),
@@ -826,7 +715,7 @@ withWorkspace(
     const { featCommit } = servedFeature(ctx);
     mustApply(ctx);
     const before = snapshotTree(ctx.workspace);
-    const audit = runInstaller(shell, ctx, ['-Source', 'pstack=simpsonm09/pstack-max@feat'], {
+    const audit = runInstaller(ctx, ['-Source', 'pstack=simpsonm09/pstack-max@feat'], {
       apply: false,
       env: githubEnv(ctx),
     });
@@ -850,7 +739,7 @@ withWorkspace(
     const lockBefore = readFileSync(lockPath(ctx), 'utf8');
     const featTwo = moveFeat(ctx, bare);
 
-    const dry = runInstaller(shell, ctx, ['-Update'], { apply: false, env: githubEnv(ctx) });
+    const dry = runInstaller(ctx, ['-Update'], { apply: false, env: githubEnv(ctx) });
     assertOk(dry);
     assert.match(dry.stdout, new RegExp(`feat ${featCommit} -> ${featTwo}`), dry.stdout);
     assert.equal(readFileSync(lockPath(ctx), 'utf8'), lockBefore, 'a dry -Update changed the lock');
@@ -889,7 +778,7 @@ withWorkspace(
   (ctx) => {
     servedFeature(ctx);
     mustApply(ctx);
-    const strict = runInstaller(shell, ctx, ['-Update', '-Check', '-Strict'], {
+    const strict = runInstaller(ctx, ['-Update', '-Check', '-Strict'], {
       apply: false,
       env: githubEnv(ctx),
     });
@@ -912,7 +801,7 @@ withWorkspace(
 
     writeFile(checkout, 'index.ts', 'export default { edit: 2 };\n');
     const installed = join(ctx.workspace, '.opencode', 'plugins', 'org-ai-plugin', 'index.ts');
-    const check = runInstaller(shell, ctx, ['-Update', '-Check', '-Strict'], { apply: false });
+    const check = runInstaller(ctx, ['-Update', '-Check', '-Strict'], { apply: false });
     assert.equal(check.status, 1, `the edited checkout was not reported:\n${check.stdout}`);
     assert.match(readFileSync(installed, 'utf8'), /edit: 1/, 'the check changed the install');
 
@@ -934,7 +823,7 @@ withWorkspace(
     mustApply(ctx, ['-Source', 'pstack=simpsonm09/pstack-max@feat'], { env: githubEnv(ctx) });
     gitRun(bare, ['update-ref', '-d', 'refs/heads/feat']);
     const before = snapshotTree(ctx.workspace);
-    const run = runInstaller(shell, ctx, ['-Update'], { env: githubEnv(ctx) });
+    const run = runInstaller(ctx, ['-Update'], { env: githubEnv(ctx) });
     assert.notEqual(run.status, 0, '-Update resolved a branch that is gone');
     assert.match(plainOutput(run), /has no branch or tag named feat/, run.stdout);
     assert.deepEqual(snapshotTree(ctx.workspace), before, 'a failed -Update changed the install');
@@ -957,7 +846,7 @@ withWorkspace(
     gitRun(ctx.fixture.dir, ['commit', '-q', '-m', 'newer']);
     const newer = gitRun(ctx.fixture.dir, ['rev-parse', 'HEAD']);
 
-    const run = runInstaller(shell, ctx, ['-Update'], { apply: false });
+    const run = runInstaller(ctx, ['-Update'], { apply: false });
     assertOk(run);
     assert.match(
       run.stdout,
@@ -1018,10 +907,8 @@ withWorkspace(
     const commit = servedConfigLayer(ctx);
     const override = ['-Source', `org-ai-plugin=simpsonm09/org-ai-plugin@${commit}`];
     mustApply(ctx, override, { env: githubEnv(ctx) });
-    assertOk(runInstaller(shell, ctx, ['-Status'], { apply: false, env: githubEnv(ctx) }));
-    assertOk(
-      runInstaller(shell, ctx, ['-Update', '-Check'], { apply: false, env: githubEnv(ctx) }),
-    );
+    assertOk(runInstaller(ctx, ['-Status'], { apply: false, env: githubEnv(ctx) }));
+    assertOk(runInstaller(ctx, ['-Update', '-Check'], { apply: false, env: githubEnv(ctx) }));
   },
   {},
 );
@@ -1031,7 +918,6 @@ withWorkspace(
   (ctx) => {
     const commit = servedConfigLayer(ctx);
     const audit = runInstaller(
-      shell,
       ctx,
       ['-Source', `org-ai-plugin=simpsonm09/org-ai-plugin@${commit}`],
       { apply: false, env: githubEnv(ctx) },
@@ -1070,7 +956,7 @@ withWorkspace(
     );
     rmSync(marker);
 
-    const audit = runInstaller(shell, ctx, ['-Source', `org-ai-plugin=local:${checkout}`], {
+    const audit = runInstaller(ctx, ['-Source', `org-ai-plugin=local:${checkout}`], {
       apply: false,
     });
     assertOk(audit);
@@ -1080,61 +966,6 @@ withWorkspace(
 );
 
 withWorkspace(
-  'finding F1: a linked git worktree is a readable local layer and its worktree filter stays guarded',
-  (ctx) => {
-    const normal = join(ctx.base, 'pstack-worktree');
-    gitRun(ctx.fixture.dir, ['worktree', 'add', '-b', 'fixture-worktree', normal, 'HEAD']);
-    mustApply(ctx, ['-Source', `pstack=local:${normal}`]);
-    assert.equal(sourceOf(ctx, 'pstack').source.kind, 'local');
-
-    const guarded = join(ctx.base, 'pstack-worktree-guarded');
-    gitRun(ctx.fixture.dir, ['worktree', 'add', '-b', 'fixture-worktree-guarded', guarded, 'HEAD']);
-    gitRun(guarded, ['config', '--local', 'extensions.worktreeConfig', 'true']);
-    const marker = join(ctx.base, 'worktree-filter-marker');
-    gitRun(guarded, ['config', '--worktree', 'filter.hostile.clean', touchAndCat(marker)]);
-    assert.equal(
-      gitRun(guarded, ['config', '--local', '--bool', '--get', 'extensions.worktreeConfig']),
-      'true',
-    );
-    assert.match(
-      gitRun(guarded, ['config', '--worktree', '--name-only', '--get-regexp', '^filter\.']),
-      /filter\.hostile\.clean/,
-    );
-    writeFileSync(join(guarded, '.gitattributes'), '*.txt filter=hostile\n');
-    writeFileSync(join(guarded, 'notes.txt'), 'fixture\n');
-    gitRun(guarded, ['hash-object', '--path=notes.txt', 'notes.txt']);
-    assert.ok(existsSync(marker), 'the worktree filter fixture did not run unguarded');
-    rmSync(marker);
-    const attributes = gitRun(guarded, ['rev-parse', '--git-path', 'info/attributes']);
-    mkdirSync(dirname(attributes), { recursive: true });
-    writeFileSync(attributes, '*.txt filter=hostile\n');
-    const inspect = `$ErrorActionPreference = 'Stop'; . '${layerSourcesFile.replaceAll("'", "''")}'; Read-TreeFilterNames -Dir '${guarded.replaceAll("'", "''")}' | ConvertTo-Json -Compress`;
-    const guardedRead = spawnSync(psShell, ['-NoProfile', '-NonInteractive', '-Command', inspect], {
-      windowsHide: true,
-      encoding: 'utf8',
-      env: testEnvironment(),
-    });
-    assert.equal(guardedRead.status, 0, `${guardedRead.stdout}\n${guardedRead.stderr}`);
-    assert.match(guardedRead.stdout, /hostile/, guardedRead.stdout);
-    const guardedHash = `$ErrorActionPreference = 'Stop'; . '${layerSourcesFile.replaceAll("'", "''")}'; Invoke-GitGuarded -Dir '${guarded.replaceAll("'", "''")}' -Arguments @('-C', '${guarded.replaceAll("'", "''")}', 'hash-object', '--path=notes.txt', 'notes.txt') -TimeoutSeconds 15 | ConvertTo-Json -Compress`;
-    const guardedRun = spawnSync(
-      shell,
-      ['-NoProfile', '-NonInteractive', '-Command', guardedHash],
-      { windowsHide: true, encoding: 'utf8', env: testEnvironment() },
-    );
-    assert.equal(guardedRun.status, 0, `${guardedRun.stdout}\n${guardedRun.stderr}`);
-    assert.equal(existsSync(marker), false, 'git ran the hostile per-worktree filter');
-    const audit = runInstaller(shell, ctx, ['-Source', `pstack=local:${guarded}`], {
-      apply: false,
-    });
-    assertOk(audit);
-    assert.equal(existsSync(marker), false, 'the installer ran the hostile per-worktree filter');
-  },
-  {},
-);
-
-// Finding 3: a recorded local override whose folder is gone is reported, and only an apply stops on it.
-withWorkspace(
   'a recorded local override whose folder is gone is reported by -Status, -Update -Check, and -Remove, and only -Apply stops',
   (ctx) => {
     const checkout = join(ctx.base, 'org-checkout');
@@ -1143,11 +974,11 @@ withWorkspace(
     rmSync(checkout, { recursive: true, force: true });
     const missing = `local ${checkout}: folder missing`;
 
-    const status = runInstaller(shell, ctx, ['-Status'], { apply: false });
+    const status = runInstaller(ctx, ['-Status'], { apply: false });
     assertOk(status);
     assert.ok(status.stdout.includes(missing), status.stdout);
 
-    const check = runInstaller(shell, ctx, ['-Update', '-Check', '-Strict'], { apply: false });
+    const check = runInstaller(ctx, ['-Update', '-Check', '-Strict'], { apply: false });
     assert.equal(
       check.status,
       1,
@@ -1155,10 +986,8 @@ withWorkspace(
     );
     assert.ok(check.stdout.includes(missing), check.stdout);
 
-    assertOk(runInstaller(shell, ctx, ['-Uninstall'], { apply: false }));
-    assertOk(
-      runInstaller(shell, ctx, ['-Remove', '-Layers', 'personal-ai-plugin'], { apply: false }),
-    );
+    assertOk(runInstaller(ctx, ['-Uninstall'], { apply: false }));
+    assertOk(runInstaller(ctx, ['-Remove', '-Layers', 'personal-ai-plugin'], { apply: false }));
     const refused = removal(ctx, ['-Remove', '-Layers', 'personal-ai-plugin']);
     assert.notEqual(refused.status, 0, 'a removal rewrote the config without the missing fragment');
     assert.match(
@@ -1194,7 +1023,7 @@ withWorkspace(
     setLock(ctx, lock);
     rmSync(bare, { recursive: true, force: true });
 
-    const check = runInstaller(shell, ctx, ['-Update', '-Check'], {
+    const check = runInstaller(ctx, ['-Update', '-Check'], {
       apply: false,
       env: githubEnv(ctx),
     });
@@ -1230,7 +1059,7 @@ withWorkspace(
     const cache = join(ctx.workspace, '.claude', 'cache', 'pstack');
     gitRun(cache, ['fetch', '--quiet', '--filter=blob:none', 'origin', renamed]);
 
-    const check = runInstaller(shell, ctx, ['-Update', '-Check'], {
+    const check = runInstaller(ctx, ['-Update', '-Check'], {
       apply: false,
       env: githubEnv(ctx),
     });
@@ -1247,7 +1076,6 @@ withWorkspace(
 
 test(
   'without the test-mode flag the owner/repo shorthand names github.com, even when the test root is set',
-  { skip },
   () => {
     const env = {
       ...process.env,
@@ -1263,7 +1091,6 @@ test(
 
 test(
   'with the test-mode flag and a root under the temp folder, the shorthand names that folder and warns',
-  { skip },
   () => {
     const root = join(tmpdir(), 'maxstack-seam-probe');
     const run = resolveShorthand({
@@ -1283,7 +1110,6 @@ test(
 
 test(
   'with the test-mode flag but a root outside the temp folder, the shorthand names github.com',
-  { skip },
   () => {
     const run = resolveShorthand({
       ...process.env,
@@ -1303,12 +1129,9 @@ withWorkspace(
     const env = { ...process.env, MAXSTACK_TEST_GITHUB_ROOT: join(ctx.base, 'github') };
     delete env.MAXSTACK_TEST_MODE;
     const run = spawnSync(
-      shell,
+      process.execPath,
       [
-        '-NoProfile',
-        '-NonInteractive',
-        '-File',
-        installer,
+        tsInstaller,
         '-Workspace',
         ctx.workspace,
         '-LayersFile',
@@ -1402,7 +1225,7 @@ withWorkspace(
       const lock = structuredClone(good);
       mutate(sourceBlockIn(lock, 'pstack'));
       setLock(ctx, lock);
-      const status = runInstaller(shell, ctx, ['-Status'], { apply: false });
+      const status = runInstaller(ctx, ['-Status'], { apply: false });
       const recorded = Object.values(sourceBlockIn(lock, 'pstack')).filter(
         (value) => typeof value === 'string',
       );
@@ -1432,7 +1255,7 @@ withWorkspace(
     sourceBlockIn(lock, 'pstack').url = 'ext::sh -c touch x';
     setLock(ctx, lock);
     const before = snapshotTree(ctx.workspace);
-    const apply = runInstaller(shell, ctx, [], { env: githubEnv(ctx) });
+    const apply = runInstaller(ctx, [], { env: githubEnv(ctx) });
     assert.notEqual(apply.status, 0, 'an apply wrote a layer whose recorded url is invalid');
     assert.match(plainOutput(apply), /layer 'pstack' has an invalid url/, plainOutput(apply));
     assert.match(plainOutput(apply), /-Source pstack=default -Apply/, plainOutput(apply));
@@ -1441,124 +1264,6 @@ withWorkspace(
   {},
 );
 
-withWorkspace(
-  'an invalid recorded override is ignored by -Update, -Remove, and -Uninstall, and -Source name=default -Apply repairs it',
-  (ctx) => {
-    servedFeature(ctx);
-    mustApply(ctx, ['-Source', 'pstack=simpsonm09/pstack-max@feat'], { env: githubEnv(ctx) });
-    const lock = readJson(lockPath(ctx));
-    sourceBlockIn(lock, 'pstack').url = 'ext::sh -c touch x';
-    setLock(ctx, lock);
-    for (const args of [
-      ['-Update', '-Check'],
-      ['-Remove', '-Layers', 'personal-ai-plugin'],
-      ['-Uninstall'],
-    ]) {
-      const run = runInstaller(shell, ctx, args, { apply: false, env: githubEnv(ctx) });
-      assertOk(run);
-      assert.match(
-        run.stdout,
-        /pstack: invalid recorded source, ignored for this run/,
-        `${args.join(' ')}: ${run.stdout}`,
-      );
-    }
-    mustApply(ctx, ['-Source', 'pstack=default']);
-    assert.equal(
-      sourceOf(ctx, 'pstack').source.override,
-      false,
-      'the repair did not drop the invalid override',
-    );
-  },
-  {},
-);
-
-// Finding 7: git never waits on a credential prompt, and ls-remote gives up after its time limit with the reason.
-function runAsync(args, env) {
-  return new Promise((resolve, reject) => {
-    const child = spawn(psShell, args, {
-      windowsHide: true,
-      env,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-    // A run that never ends is killed, so a failing test cannot leave the process behind.
-    const guard = setTimeout(() => child.kill(), 100000);
-    let stdout = '';
-    let stderr = '';
-    child.stdout.on('data', (chunk) => {
-      stdout += chunk;
-    });
-    child.stderr.on('data', (chunk) => {
-      stderr += chunk;
-    });
-    child.on('error', reject);
-    child.on('close', (status) => {
-      clearTimeout(guard);
-      resolve({ status, stdout, stderr });
-    });
-  });
-}
-
-test(
-  'the git guard sets the prompt variables, and turns on file transport only in a test run',
-  { skip },
-  () => {
-    const script = `. '${layerSourcesFile}'; $vars = Get-GitChildVariables -Settings (Get-GitGuardSettings); "PROMPT=$($vars.GIT_TERMINAL_PROMPT)"; "GCM=$($vars.GCM_INTERACTIVE)"; (Get-GitGuardSettings | ForEach-Object { "$($_.key)=$($_.value)" }) -join ' '`;
-    const real = { ...process.env };
-    delete real.MAXSTACK_TEST_MODE;
-    const run = spawnSync(psShell, ['-NoProfile', '-NonInteractive', '-Command', script], {
-      windowsHide: true,
-      encoding: 'utf8',
-      env: real,
-    });
-    assertOk(run);
-    assert.match(run.stdout, /PROMPT=0/, run.stdout);
-    assert.match(run.stdout, /GCM=never/, run.stdout);
-    assert.match(run.stdout, /core\.fsmonitor= /, run.stdout);
-    assert.match(run.stdout, /core\.askPass= /, run.stdout);
-    assert.match(run.stdout, /protocol\.allow=never/, run.stdout);
-    assert.doesNotMatch(run.stdout, /protocol\.file\.allow/, 'a real run allows file transport');
-
-    const seam = spawnSync(psShell, ['-NoProfile', '-NonInteractive', '-Command', script], {
-      windowsHide: true,
-      encoding: 'utf8',
-      env: { ...real, MAXSTACK_TEST_MODE: '1' },
-    });
-    assert.match(seam.stdout, /protocol\.file\.allow=always/, seam.stdout);
-  },
-  {},
-);
-
-test(
-  'an ls-remote that passes its time limit is stopped, and the error says so',
-  { skip, timeout: 120000 },
-  async () => {
-    // The silent server takes each connection and never answers. The reset a stopped git causes is expected here.
-    const sockets = new Set();
-    const server = createServer((socket) => {
-      sockets.add(socket);
-      socket.on('error', () => {});
-      socket.on('close', () => sockets.delete(socket));
-    });
-    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
-    try {
-      const { port } = server.address();
-      const script = `. '${layerSourcesFile}'; Find-GitRefCommit -Url 'https://127.0.0.1:${port}/simpsonm09/pstack-max.git' -Ref 'main' -TimeoutSeconds 2`;
-      const run = await runAsync(['-NoProfile', '-NonInteractive', '-Command', script], {
-        ...process.env,
-        GIT_TERMINAL_PROMPT: '0',
-      });
-      assert.notEqual(run.status, 0, 'a silent remote was waited for');
-      assert.match(plainOutput(run), /ls-remote took longer than 2 seconds/, plainOutput(run));
-    } finally {
-      for (const socket of sockets) socket.destroy();
-      server.close();
-    }
-  },
-);
-
-// Finding 9: a local source is a checkout of its own only when git's top level is the folder; an ancestor of the workspace
-// would contain it; a long-path prefix and a junction are followed before a path is compared; a comma and a C:\x@ref
-// spec get a clear reason.
 withWorkspace(
   'a plain folder inside another git repository is not a checkout, so no commit of that repository is recorded',
   (ctx) => {
@@ -1570,7 +1275,7 @@ withWorkspace(
     const plain = join(outer, 'plain');
     writeLayerStub(plain, { claudePlugin: 'org-ai-plugin' });
 
-    const audit = runInstaller(shell, ctx, ['-Source', `org-ai-plugin=local:${plain}`], {
+    const audit = runInstaller(ctx, ['-Source', `org-ai-plugin=local:${plain}`], {
       apply: false,
     });
     assertOk(audit);
@@ -1584,7 +1289,7 @@ withWorkspace(
 withWorkspace(
   'a local source that contains the workspace is refused, since the layer would hold the installer that reads it',
   (ctx) => {
-    const run = runInstaller(shell, ctx, ['-Source', `org-ai-plugin=local:${ctx.base}`], {
+    const run = runInstaller(ctx, ['-Source', `org-ai-plugin=local:${ctx.base}`], {
       apply: false,
     });
     assert.notEqual(run.status, 0, 'an ancestor of the workspace was accepted');
@@ -1596,12 +1301,9 @@ withWorkspace(
 withWindowsWorkspace(
   'a device prefix in a -Source path is refused by its text, and is not compared by the folder it names',
   (ctx) => {
-    const prefixed = runInstaller(
-      shell,
-      ctx,
-      ['-Source', `org-ai-plugin=local:\\\\?\\${ctx.workspace}`],
-      { apply: false },
-    );
+    const prefixed = runInstaller(ctx, ['-Source', `org-ai-plugin=local:\\\\?\\${ctx.workspace}`], {
+      apply: false,
+    });
     assert.notEqual(prefixed.status, 0, 'a long-path prefix hid the workspace');
     assert.match(plainOutput(prefixed), /UNC or device path/, prefixed.stdout);
   },
@@ -1613,7 +1315,7 @@ withWorkspace(
   (ctx) => {
     const folder = join(ctx.base, 'a');
     mkdirSync(folder);
-    const run = runInstaller(shell, ctx, ['-Source', `org-ai-plugin=local:${folder},b`], {
+    const run = runInstaller(ctx, ['-Source', `org-ai-plugin=local:${folder},b`], {
       apply: false,
     });
     assert.notEqual(run.status, 0, 'a path with a comma was accepted');
@@ -1629,7 +1331,7 @@ withWorkspace(
 withWorkspace(
   'a -Source spec that is a folder with an @ref says to use local:',
   (ctx) => {
-    const run = runInstaller(shell, ctx, ['-Source', 'pstack=C:\\x@main'], { apply: false });
+    const run = runInstaller(ctx, ['-Source', 'pstack=C:\\x@main'], { apply: false });
     assert.notEqual(run.status, 0, 'a folder with an @ref was accepted as a git source');
     assert.ok(plainOutput(run).includes('did you mean local:C:\\x?'), run.stdout);
   },
@@ -1656,19 +1358,17 @@ withWindowsWorkspace(
     sourceBlockIn(lock, 'org-ai-plugin').path = `${gone}:/repo/org`;
     setLock(ctx, lock);
 
-    const status = runInstaller(shell, ctx, ['-Status'], { apply: false });
+    const status = runInstaller(ctx, ['-Status'], { apply: false });
     assertOk(status);
     assert.ok(
       status.stdout.split('\\').join('/').includes(`${gone}:/repo/org: folder missing`),
       status.stdout,
     );
-    assertOk(runInstaller(shell, ctx, ['-Update', '-Check'], { apply: false }));
-    assertOk(
-      runInstaller(shell, ctx, ['-Remove', '-Layers', 'personal-ai-plugin'], { apply: false }),
-    );
-    assertOk(runInstaller(shell, ctx, ['-Uninstall'], { apply: false }));
+    assertOk(runInstaller(ctx, ['-Update', '-Check'], { apply: false }));
+    assertOk(runInstaller(ctx, ['-Remove', '-Layers', 'personal-ai-plugin'], { apply: false }));
+    assertOk(runInstaller(ctx, ['-Uninstall'], { apply: false }));
 
-    const explicit = runInstaller(shell, ctx, ['-Source', `org-ai-plugin=local:${gone}:/nope`], {
+    const explicit = runInstaller(ctx, ['-Source', `org-ai-plugin=local:${gone}:/nope`], {
       apply: false,
     });
     assert.notEqual(explicit.status, 0, 'an explicit source on an absent drive was accepted');
@@ -1678,23 +1378,6 @@ withWindowsWorkspace(
 );
 
 // Round 2, C: a drive root or a share root is refused as a local source, and its path is kept whole, never cut to "Y:".
-test(
-  'the folder helper keeps a drive root whole, with its backslash',
-  { skip },
-  () => {
-    const driveRoot = parsePath(tmpdir()).root;
-    const script = `. '${layerSourcesFile}'; Get-FullFolderPath '${driveRoot.split('\\').join('/')}'`;
-    const run = spawnSync(psShell, ['-NoProfile', '-NonInteractive', '-Command', script], {
-      windowsHide: true,
-      encoding: 'utf8',
-    });
-    assertOk(run);
-    assert.equal(run.stdout.trim(), driveRoot, run.stdout);
-  },
-  {},
-);
-
-// Round 2, D: a clean filter that .git/config names is a program too. An audit of a local tree must run none of it.
 withWorkspace(
   'an audit of a -Source local tree runs no clean filter that its .git/config names',
   (ctx) => {
@@ -1713,7 +1396,7 @@ withWorkspace(
     ]);
     writeFile(checkout, 'notes.txt', 'two\n');
 
-    const audit = runInstaller(shell, ctx, ['-Source', `org-ai-plugin=local:${checkout}`], {
+    const audit = runInstaller(ctx, ['-Source', `org-ai-plugin=local:${checkout}`], {
       apply: false,
     });
     assertOk(audit);
@@ -1726,34 +1409,6 @@ withWorkspace(
   {},
 );
 
-// Round 2, E: the installer needs PowerShell 7. Windows PowerShell 5.1 must stop with that requirement, not a parse error.
-const windowsPowerShell =
-  spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', 'exit 0'], {
-    windowsHide: true,
-  }).status === 0;
-
-test(
-  'the installer under Windows PowerShell 5.1 stops with the PowerShell 7 requirement, not a parse error',
-  { skip: windowsPowerShell ? false : 'powershell.exe is not available' },
-  () => {
-    const base = mkdtempSync(join(tmpdir(), 'maxstack-requires-'));
-    try {
-      const run = spawnSync(
-        'powershell.exe',
-        ['-NoProfile', '-NonInteractive', '-File', installer, '-Workspace', join(base, 'missing')],
-        { windowsHide: true, encoding: 'utf8' },
-      );
-      const text = plainOutput(run);
-      assert.notEqual(run.status, 0, text);
-      assert.match(text, /#requires.*7\.0/i, text);
-      assert.doesNotMatch(text, /ParserError|Unexpected token|Array index expression/, text);
-    } finally {
-      rmSync(base, { recursive: true, force: true });
-    }
-  },
-  {},
-);
-
 // Round 2, H: the refusal for a missing layer folder names the absolute folder, and the command that fits the mode.
 const ORG_DEFAULT_FOLDER = (ctx) => join(ctx.workspace, 'projects', 'repos', 'org-ai-plugin');
 
@@ -1761,7 +1416,7 @@ withWorkspace(
   'finding F4: a missing default layer names the clone URL and first-time source options',
   (ctx) => {
     rmSync(ORG_DEFAULT_FOLDER(ctx), { recursive: true, force: true });
-    const apply = runInstaller(shell, ctx, []);
+    const apply = runInstaller(ctx, []);
     assert.notEqual(apply.status, 0, 'an apply wrote past a missing default folder');
     assert.ok(
       plainOutput(apply).includes(
@@ -1782,7 +1437,7 @@ withWorkspace(
     writeLayerStub(checkout, { claudePlugin: 'org-ai-plugin' });
     mustApply(ctx, ['-Source', `org-ai-plugin=local:${checkout}`]);
     rmSync(checkout, { recursive: true, force: true });
-    const apply = runInstaller(shell, ctx, []);
+    const apply = runInstaller(ctx, []);
     assert.notEqual(apply.status, 0, 'an apply wrote past a missing override folder');
     assert.match(
       plainOutput(apply),
@@ -1811,29 +1466,6 @@ withWorkspace(
 );
 
 // Round 2, J: a pipe that a stopped git's child still holds open is not waited on past the bound.
-test(
-  'a git output read that never completes returns within its bound, with no output',
-  { skip, timeout: 60000 },
-  () => {
-    const script = `$ErrorActionPreference = 'Stop'; . '${layerSourcesFile}'; $task = [System.Threading.Tasks.TaskCompletionSource[string]]::new().Task; $read = Read-GitPipeBounded -Task $task -Milliseconds 1000; "COMPLETE=$read"`;
-    const started = Date.now();
-    const run = spawnSync(psShell, ['-NoProfile', '-NonInteractive', '-Command', script], {
-      windowsHide: true,
-      encoding: 'utf8',
-      timeout: 50000,
-    });
-    assertOk(run);
-    assert.ok(Date.now() - started < 40000, 'the read was not bounded');
-    assert.ok(run.stdout.includes('COMPLETE=False'), run.stdout);
-  },
-  {},
-);
-
-// ---- Round 3: the filter guard. A clean command that the tree's config defines writes a marker file when it runs.
-// The fixture runs the command unguarded first, so a marker that is missing after an audit is a result, not a fixture gap.
-const touchAndCat = (marker) => `sh -c "touch '${marker.replace(/\\/g, '/')}'; cat"`;
-
-// Finding 1: the name comes from the config key. A clean command whose path has a dot ended the line the old parser read.
 withWorkspace(
   'an audit of a -Source local tree runs no clean filter whose command has a dot in it',
   (ctx) => {
@@ -1855,7 +1487,7 @@ withWorkspace(
     );
     rmSync(marker);
 
-    const audit = runInstaller(shell, ctx, ['-Source', `org-ai-plugin=local:${checkout}`], {
+    const audit = runInstaller(ctx, ['-Source', `org-ai-plugin=local:${checkout}`], {
       apply: false,
     });
     assertOk(audit);
@@ -1891,7 +1523,7 @@ withWorkspace(
     );
     rmSync(marker);
 
-    const audit = runInstaller(shell, ctx, ['-Source', `org-ai-plugin=local:${checkout}`], {
+    const audit = runInstaller(ctx, ['-Source', `org-ai-plugin=local:${checkout}`], {
       apply: false,
     });
     assertOk(audit);
@@ -1925,7 +1557,7 @@ withWorkspace(
     );
     rmSync(marker);
 
-    const status = runInstaller(shell, ctx, ['-Source', `org-ai-plugin=local:${checkout}`], {
+    const status = runInstaller(ctx, ['-Source', `org-ai-plugin=local:${checkout}`], {
       apply: false,
     });
     assertOk(status);
@@ -1959,15 +1591,15 @@ withWorkspace(
     mustApply(ctx, ['-Source', `org-ai-plugin=local:${checkout}`]);
     appendFileSync(join(checkout, '.git', 'config'), manyFilters(400));
 
-    const status = runInstaller(shell, ctx, ['-Status'], { apply: false });
+    const status = runInstaller(ctx, ['-Status'], { apply: false });
     assertOk(status);
     assert.match(
       plainOutput(status),
       /org-ai-plugin: override, local .*unreadable: too many filter drivers/,
       plainOutput(status),
     );
-    assertOk(runInstaller(shell, ctx, ['-Update', '-Check'], { apply: false }));
-    const audit = runInstaller(shell, ctx, ['-Source', `org-ai-plugin=local:${checkout}`], {
+    assertOk(runInstaller(ctx, ['-Update', '-Check'], { apply: false }));
+    const audit = runInstaller(ctx, ['-Source', `org-ai-plugin=local:${checkout}`], {
       apply: false,
     });
     assertOk(audit);
@@ -1988,7 +1620,7 @@ withWorkspace(
     appendFileSync(join(checkout, '.git', 'config'), manyFilters(100));
     // The user's global config may name filters of its own, such as git-lfs, so the count is taken with an empty global config.
     // The guard's budget counts every variable the installer inherits, and a runner's environment is large, so the child gets
-    // only what pwsh and git need. The 100 filter settings are then what the budget measures.
+    // only what bun and git need. The 100 filter settings are then what the budget measures.
     const home = join(ctx.base, 'empty-home');
     mkdirSync(home, { recursive: true });
     writeFileSync(join(home, '.gitconfig'), '');
@@ -2019,7 +1651,7 @@ withWorkspace(
       XDG_CONFIG_HOME: join(home, '.config'),
       GIT_CONFIG_NOSYSTEM: '1',
     };
-    const audit = runInstaller(shell, ctx, ['-Source', `org-ai-plugin=local:${checkout}`], {
+    const audit = runInstaller(ctx, ['-Source', `org-ai-plugin=local:${checkout}`], {
       apply: false,
       env,
     });
@@ -2036,106 +1668,6 @@ withWorkspace(
 
 // Finding 3: a git failure inside the checkout probe is reported as an unreadable layer. Set-LayerChoice must not throw,
 // since a throw there would stop -Status, -Update, and -Remove.
-test(
-  'a checkout probe that throws is reported as unreadable, and Set-LayerChoice does not throw',
-  { skip },
-  () => {
-    const script = `$ErrorActionPreference = 'Stop'; . '${layerSourcesFile}'; function Invoke-GitGuarded { throw 'simulated git failure' }; $state = Get-LocalCheckoutState -Root ([IO.Path]::GetTempPath()); "STATE=[$($state.unreadable)]"; $layer = @{ name = 'x'; sourcePath = '.'; root = $null; override = $false }; $choice = [pscustomobject]@{ kind = 'local'; url = $null; ref = $null; commit = $null; path = ([IO.Path]::GetTempPath()); checkout = ([IO.Path]::GetTempPath()); override = $true }; Set-LayerChoice -Layer $layer -Choice $choice; "LAYER=[$($layer.unreadable)]"`;
-    const run = spawnSync(psShell, ['-NoProfile', '-NonInteractive', '-Command', script], {
-      windowsHide: true,
-      encoding: 'utf8',
-      env: testEnvironment(),
-    });
-    assertOk(run);
-    assert.match(
-      run.stdout,
-      /STATE=\[the checkout could not be read: simulated git failure\]/,
-      run.stdout,
-    );
-    assert.match(
-      run.stdout,
-      /LAYER=\[the checkout could not be read: simulated git failure\]/,
-      run.stdout,
-    );
-  },
-  {},
-);
-
-// Finding 4: the guard turns off only the filters the tree itself defines: its own config, what its includes add, its per-worktree
-// config, and the names its attributes files use. The user's global and system filters run, as they do in any checkout.
-function runGit(dir, args, env = process.env) {
-  const run = spawnSync(
-    'git',
-    ['-c', 'user.name=test', '-c', 'user.email=test@example.invalid', ...args],
-    { windowsHide: true, cwd: dir, encoding: 'utf8', env },
-  );
-  assert.equal(run.status, 0, `git ${args.join(' ')} failed: ${run.stderr}`);
-  return run.stdout.trim();
-}
-
-// The environment whose HOME holds a .gitconfig with the given settings, which is the user's global config. The installer's git
-// children read the global config from HOME, unless the caller sets GIT_CONFIG_GLOBAL to another file. XDG and the system config
-// are off, so the only global config is this one.
-function homeEnv(home, settings = []) {
-  mkdirSync(home, { recursive: true });
-  const file = join(home, '.gitconfig');
-  writeFileSync(file, '');
-  for (const [key, value] of settings) runGit(home, ['config', '-f', file, key, value]);
-  return {
-    ...process.env,
-    HOME: home,
-    USERPROFILE: home,
-    XDG_CONFIG_HOME: join(home, '.config'),
-    GIT_CONFIG_NOSYSTEM: '1',
-  };
-}
-
-// The environment with a user global config that holds one setting. The file is outside the checkout.
-function globalGitEnv(ctx, key, value) {
-  return homeEnv(join(ctx.base, 'home'), [[key, value]]);
-}
-
-// A local checkout with one committed file, and a .gitattributes that names the mark filter on text files.
-function markedCheckoutWithCommit(ctx) {
-  const checkout = join(ctx.base, 'org-checkout');
-  writeLayerStub(checkout, { claudePlugin: 'org-ai-plugin' });
-  writeFile(checkout, 'notes.txt', 'one\n');
-  runGit(checkout, ['init', '-q']);
-  runGit(checkout, ['add', '-A']);
-  runGit(checkout, ['commit', '-q', '-m', 'layer']);
-  return checkout;
-}
-
-withWorkspace(
-  'a checkout runs the smudge filter that the user global config defines, since the guard turns off only the tree filters',
-  (ctx) => {
-    const source = join(ctx.base, 'source');
-    writeFile(source, '.gitattributes', '*.txt filter=up\n');
-    writeFile(source, 'a.txt', 'hello\n');
-    runGit(source, ['init', '-q']);
-    runGit(source, ['add', '-A']);
-    runGit(source, ['commit', '-q', '-m', 'source']);
-    const env = globalGitEnv(ctx, 'filter.up.smudge', 'tr a-z A-Z');
-    const target = join(ctx.base, 'target');
-    runGit(ctx.base, ['clone', '-q', '--no-checkout', source, target], env);
-
-    const script = `$ErrorActionPreference = 'Stop'; . '${layerSourcesFile}'; $target = '${target.replace(/\\/g, '/')}'; $run = Invoke-GitGuarded -Dir $target -Arguments @('-C', $target, 'checkout', '--quiet', '-f', 'HEAD'); "CODE=$($run.code)"`;
-    const guarded = spawnSync(psShell, ['-NoProfile', '-NonInteractive', '-Command', script], {
-      windowsHide: true,
-      encoding: 'utf8',
-      env: testEnvironment(env),
-    });
-    assertOk(guarded);
-    assert.match(guarded.stdout, /CODE=0/, guarded.stdout);
-    assert.equal(
-      readFileSync(join(target, 'a.txt'), 'utf8'),
-      'HELLO\n',
-      'the guarded checkout did not run the global smudge filter',
-    );
-  },
-  {},
-);
-
 withWorkspace(
   'an audit turns off a filter that the tree reaches through an include in its own config',
   (ctx) => {
@@ -2154,7 +1686,7 @@ withWorkspace(
     );
     rmSync(marker);
 
-    const audit = runInstaller(shell, ctx, ['-Source', `org-ai-plugin=local:${checkout}`], {
+    const audit = runInstaller(ctx, ['-Source', `org-ai-plugin=local:${checkout}`], {
       apply: false,
     });
     assertOk(audit);
@@ -2184,7 +1716,7 @@ withWorkspace(
     );
     rmSync(marker);
 
-    const audit = runInstaller(shell, ctx, ['-Source', `org-ai-plugin=local:${checkout}`], {
+    const audit = runInstaller(ctx, ['-Source', `org-ai-plugin=local:${checkout}`], {
       apply: false,
     });
     assertOk(audit);
@@ -2213,7 +1745,7 @@ withWorkspace(
     );
     rmSync(marker);
 
-    const audit = runInstaller(shell, ctx, ['-Source', `org-ai-plugin=local:${checkout}`], {
+    const audit = runInstaller(ctx, ['-Source', `org-ai-plugin=local:${checkout}`], {
       apply: false,
     });
     assertOk(audit);
@@ -2242,7 +1774,7 @@ withWorkspace(
     );
     rmSync(marker);
 
-    const audit = runInstaller(shell, ctx, ['-Source', `org-ai-plugin=local:${checkout}`], {
+    const audit = runInstaller(ctx, ['-Source', `org-ai-plugin=local:${checkout}`], {
       apply: false,
       env,
     });
@@ -2306,7 +1838,7 @@ for (const [label, name] of [
       );
       rmSync(marker);
 
-      const audit = runInstaller(shell, ctx, ['-Source', `org-ai-plugin=local:${checkout}`], {
+      const audit = runInstaller(ctx, ['-Source', `org-ai-plugin=local:${checkout}`], {
         apply: false,
       });
       assertOk(audit);
@@ -2328,7 +1860,7 @@ withWorkspace(
       attributes: '',
       filters: [],
     });
-    const audit = runInstaller(shell, ctx, ['-Source', `org-ai-plugin=local:${checkout}`], {
+    const audit = runInstaller(ctx, ['-Source', `org-ai-plugin=local:${checkout}`], {
       apply: false,
     });
     assertOk(audit);
@@ -2341,34 +1873,6 @@ withWorkspace(
   {},
 );
 
-test(
-  'a non-ASCII setting reaches git intact, and a filter name git prints comes back as the same text',
-  { skip },
-  () => {
-    const base = mkdtempSync(join(tmpdir(), 'maxstack-utf8-'));
-    try {
-      const tree = join(base, 'tree');
-      mkdirSync(tree);
-      runGit(tree, ['init', '-q']);
-      runGit(tree, ['config', 'filter.é.clean', 'x']);
-      runGit(tree, ['config', 'filter.日本.clean', 'x']);
-      const script = `$ErrorActionPreference = 'Stop'; . '${layerSourcesFile}'; $tree = '${tree.replace(/\\/g, '/')}'; $names = @((Read-TreeFilterNames -Dir $tree).names); $probe = @([pscustomobject]@{ key = 'maxstack.probe'; value = '日本é' }); $run = Invoke-GitProcess -Arguments @('config', '--get', 'maxstack.probe') -Settings $probe; "NAMES has_e=$($names -contains 'é') has_cjk=$($names -contains '日本') count=$($names.Count)"; "ENV code=$($run.code) same=$($run.stdout[0] -ceq '日本é')"`;
-      const run = spawnSync(psShell, ['-NoProfile', '-NonInteractive', '-Command', script], {
-        windowsHide: true,
-        encoding: 'utf8',
-        env: testEnvironment(),
-      });
-      assertOk(run);
-      assert.match(run.stdout, /NAMES has_e=True has_cjk=True count=2/, run.stdout);
-      assert.match(run.stdout, /ENV code=0 same=True/, run.stdout);
-    } finally {
-      rmSync(base, { recursive: true, force: true });
-    }
-  },
-  {},
-);
-
-// Finding 2: an empty filter name is a name. git accepts filter..clean (a subsection that is empty), so the guard turns it off.
 withWorkspace(
   'an audit runs no clean filter whose name is empty, which .git/config names as [filter ""]',
   (ctx) => {
@@ -2384,7 +1888,7 @@ withWorkspace(
     );
     rmSync(marker);
 
-    const audit = runInstaller(shell, ctx, ['-Source', `org-ai-plugin=local:${checkout}`], {
+    const audit = runInstaller(ctx, ['-Source', `org-ai-plugin=local:${checkout}`], {
       apply: false,
     });
     assertOk(audit);
@@ -2397,25 +1901,6 @@ withWorkspace(
   {},
 );
 
-test(
-  'the driver name of filter..clean is the empty name, and the guard passes it to git',
-  { skip },
-  () => {
-    const script = `$ErrorActionPreference = 'Stop'; . '${layerSourcesFile}'; $name = Get-FilterDriverName 'filter..clean'; "NAME=[$name] IS_NULL=$($null -eq $name)"; $settings = @(Get-GitGuardSettings -FilterNames @($name)) | ForEach-Object { $_.key }; "HAS=$($settings -contains 'filter..clean')"`;
-    const run = spawnSync(psShell, ['-NoProfile', '-NonInteractive', '-Command', script], {
-      windowsHide: true,
-      encoding: 'utf8',
-      env: testEnvironment(),
-    });
-    assertOk(run);
-    assert.match(run.stdout, /NAME=\[\] IS_NULL=False/, run.stdout);
-    assert.match(run.stdout, /HAS=True/, run.stdout);
-  },
-  {},
-);
-
-// Finding 3: git status spawns a status inside each populated submodule, and that status reads the submodule's own config.
-// The superproject's guard names only the superproject's filters, so the local status must not look inside a submodule.
 withWorkspace(
   'an audit runs no filter that a populated submodule names in its own config',
   (ctx) => {
@@ -2446,7 +1931,7 @@ withWorkspace(
     );
     rmSync(marker);
 
-    const audit = runInstaller(shell, ctx, ['-Source', `org-ai-plugin=local:${checkout}`], {
+    const audit = runInstaller(ctx, ['-Source', `org-ai-plugin=local:${checkout}`], {
       apply: false,
     });
     assertOk(audit);
@@ -2485,7 +1970,7 @@ withWorkspace(
     rmSync(written);
     const before = snapshotTree(checkout);
 
-    const audit = runInstaller(shell, ctx, ['-Source', `org-ai-plugin=local:${checkout}`], {
+    const audit = runInstaller(ctx, ['-Source', `org-ai-plugin=local:${checkout}`], {
       apply: false,
       env,
     });
@@ -2518,7 +2003,7 @@ withWorkspace(
       env,
     });
 
-    const audit = runInstaller(shell, ctx, ['-Source', `org-ai-plugin=local:${checkout}`], {
+    const audit = runInstaller(ctx, ['-Source', `org-ai-plugin=local:${checkout}`], {
       apply: false,
       env,
     });
@@ -2538,7 +2023,7 @@ withWorkspace(
   (ctx) => {
     const checkout = infoAttributesCheckout(ctx, { attributes: '', filters: [] });
 
-    const audit = runInstaller(shell, ctx, ['-Source', `org-ai-plugin=local:${checkout}`], {
+    const audit = runInstaller(ctx, ['-Source', `org-ai-plugin=local:${checkout}`], {
       apply: false,
     });
     assertOk(audit);
@@ -2565,152 +2050,11 @@ withWorkspace(
     runGit(checkout, ['commit', '-q', '-m', 'layer']);
     bumpMtime(join(checkout, 'tool.ps1'));
 
-    const audit = runInstaller(shell, ctx, ['-Source', `org-ai-plugin=local:${checkout}`], {
+    const audit = runInstaller(ctx, ['-Source', `org-ai-plugin=local:${checkout}`], {
       apply: false,
     });
     assertOk(audit);
     assert.match(plainOutput(audit), /HEAD [0-9a-f]{40}, clean\)/, plainOutput(audit));
-  },
-  {},
-);
-
-// Finding 5: a git command that names no tree runs in a fresh empty folder, so the config of the folder the installer runs in
-// does not reach it. That config below rewrites the url of the remote, so a ref lookup must not read the other remote.
-function bareRepoWithCommit(base, name, text) {
-  const work = join(base, `${name}-work`);
-  writeFile(work, 'a.txt', text);
-  runGit(work, ['init', '-q', '-b', 'main']);
-  runGit(work, ['add', '-A']);
-  runGit(work, ['commit', '-q', '-m', text]);
-  const bare = join(base, `${name}.git`);
-  runGit(base, ['clone', '-q', '--bare', work, bare]);
-  return bare;
-}
-
-withWorkspace(
-  'a ref lookup reads the remote it names, not the one a config in the folder it runs from rewrites it to',
-  (ctx) => {
-    const remote = bareRepoWithCommit(ctx.base, 'remote', 'the remote');
-    const other = bareRepoWithCommit(ctx.base, 'other', 'the other remote');
-    const remoteSha = runGit(remote, ['rev-parse', 'main']);
-    const otherSha = runGit(other, ['rev-parse', 'main']);
-    const evil = join(ctx.base, 'evil');
-    mkdirSync(evil);
-    runGit(evil, ['init', '-q']);
-    runGit(evil, [
-      'config',
-      `url.${other.replace(/\\/g, '/')}.insteadOf`,
-      remote.replace(/\\/g, '/'),
-    ]);
-
-    const script = `$ErrorActionPreference = 'Stop'; . '${layerSourcesFile}'; $ref = Find-GitRefCommit -Url '${remote.replace(/\\/g, '/')}' -Ref 'main'; "REF=$ref"`;
-    const run = spawnSync(psShell, ['-NoProfile', '-NonInteractive', '-Command', script], {
-      windowsHide: true,
-      encoding: 'utf8',
-      cwd: evil,
-      env: testEnvironment(),
-    });
-    assertOk(run);
-    assert.match(run.stdout, new RegExp(`REF=${remoteSha}`), run.stdout);
-    assert.notEqual(otherSha, remoteSha);
-    assert.doesNotMatch(
-      run.stdout,
-      new RegExp(otherSha),
-      'the ref lookup read the remote that the folder config rewrote it to',
-    );
-  },
-  {},
-);
-
-test(
-  'a git command that names no tree runs outside every repository, so the folder it runs from is not read',
-  { skip },
-  () => {
-    const base = mkdtempSync(join(tmpdir(), 'maxstack-neutral-'));
-    try {
-      const evil = join(base, 'evil');
-      mkdirSync(evil);
-      runGit(evil, ['init', '-q']);
-      const script = `$ErrorActionPreference = 'Stop'; . '${layerSourcesFile}'; $run = Invoke-GitGuarded -Arguments @('rev-parse', '--is-inside-work-tree'); "CODE=$($run.code)"`;
-      const run = spawnSync(psShell, ['-NoProfile', '-NonInteractive', '-Command', script], {
-        windowsHide: true,
-        encoding: 'utf8',
-        cwd: evil,
-        env: testEnvironment(),
-      });
-      assertOk(run);
-      assert.doesNotMatch(
-        run.stdout,
-        /CODE=0/,
-        'a command that names no tree ran inside the repository of the folder it started from',
-      );
-    } finally {
-      rmSync(base, { recursive: true, force: true });
-    }
-  },
-  {},
-);
-
-// Finding 6: git takes its repository, its worktree, and its settings from variables the installer inherits. The guard removes
-// the variables that name a repository, a config, or a program from each child, and leaves the installer's own environment alone.
-function committedRepo(base, name, text) {
-  const dir = join(base, name);
-  writeFile(dir, 'a.txt', text);
-  runGit(dir, ['init', '-q']);
-  runGit(dir, ['add', '-A']);
-  runGit(dir, ['commit', '-q', '-m', text]);
-  return dir;
-}
-
-function checkoutStateScript(root) {
-  return `$ErrorActionPreference = 'Stop'; . '${layerSourcesFile}'; $state = Get-LocalCheckoutState -Root '${root.replace(/\\/g, '/')}'; "COMMIT=$($state.commit) DIRTY=$($state.dirty) UNREADABLE=$($state.unreadable)"`;
-}
-
-test(
-  'a checkout state reads its own HEAD, not the HEAD of the repository that GIT_DIR names',
-  { skip },
-  () => {
-    const base = mkdtempSync(join(tmpdir(), 'maxstack-gitdir-'));
-    try {
-      const mine = committedRepo(base, 'mine', 'mine\n');
-      const other = committedRepo(base, 'other', 'other\n');
-      const mineSha = runGit(mine, ['rev-parse', 'HEAD']);
-      const env = { ...testEnvironment(), GIT_DIR: join(other, '.git') };
-      const run = spawnSync(
-        shell,
-        ['-NoProfile', '-NonInteractive', '-Command', checkoutStateScript(mine)],
-        { windowsHide: true, encoding: 'utf8', env },
-      );
-      assertOk(run);
-      assert.match(run.stdout, new RegExp(`COMMIT=${mineSha} `), run.stdout);
-    } finally {
-      rmSync(base, { recursive: true, force: true });
-    }
-  },
-  {},
-);
-
-test(
-  'a checkout state reads its own worktree, not the worktree that GIT_WORK_TREE names',
-  { skip },
-  () => {
-    const base = mkdtempSync(join(tmpdir(), 'maxstack-worktree-'));
-    try {
-      const mine = committedRepo(base, 'mine', 'mine\n');
-      writeFile(mine, 'a.txt', 'changed\n');
-      const clean = committedRepo(base, 'clean', 'clean\n');
-      const mineSha = runGit(mine, ['rev-parse', 'HEAD']);
-      const env = { ...testEnvironment(), GIT_WORK_TREE: clean };
-      const run = spawnSync(
-        shell,
-        ['-NoProfile', '-NonInteractive', '-Command', checkoutStateScript(mine)],
-        { windowsHide: true, encoding: 'utf8', env },
-      );
-      assertOk(run);
-      assert.match(run.stdout, new RegExp(`COMMIT=${mineSha} DIRTY=True `), run.stdout);
-    } finally {
-      rmSync(base, { recursive: true, force: true });
-    }
   },
   {},
 );
@@ -2731,7 +2075,7 @@ withWorkspace(
     );
     rmSync(marker);
 
-    const audit = runInstaller(shell, ctx, ['-Source', `org-ai-plugin=local:${checkout}`], {
+    const audit = runInstaller(ctx, ['-Source', `org-ai-plugin=local:${checkout}`], {
       apply: false,
       env,
     });
@@ -2745,181 +2089,6 @@ withWorkspace(
   {},
 );
 
-test(
-  'the child environment loses each inherited git variable that names a repository, config, or program, and keeps the rest',
-  { skip },
-  () => {
-    const names = [
-      'GIT_DIR',
-      'GIT_WORK_TREE',
-      'GIT_INDEX_FILE',
-      'GIT_COMMON_DIR',
-      'GIT_OBJECT_DIRECTORY',
-      'GIT_ALTERNATE_OBJECT_DIRECTORIES',
-      'GIT_NAMESPACE',
-      'GIT_PREFIX',
-      'GIT_CONFIG',
-      'GIT_CONFIG_PARAMETERS',
-      'GIT_EXTERNAL_DIFF',
-      'GIT_PAGER',
-      'GIT_ASKPASS',
-      'GIT_SSH',
-      'GIT_SSH_COMMAND',
-      'GIT_PROXY_COMMAND',
-      'GIT_EXEC_PATH',
-      'GIT_TEMPLATE_DIR',
-      'GIT_ALLOW_PROTOCOL',
-      'GIT_PROTOCOL_FROM_USER',
-      'SSH_ASKPASS',
-      'SSH_ASKPASS_REQUIRE',
-    ];
-    // The names are set in lower case in a case-insensitive table, the way a Windows child environment holds them.
-    const script = `$ErrorActionPreference = 'Stop'; . '${layerSourcesFile}'; $child = [System.Collections.Generic.Dictionary[string, string]]::new([StringComparer]::OrdinalIgnoreCase); foreach ($n in @(${names.map((name) => `'${name}'`).join(',')})) { $child[$n.ToLowerInvariant()] = 'x' }; $child['GIT_CONFIG_NOSYSTEM'] = '1'; Set-GitChildEnvironment -Environment $child -Settings @(); "LEFT=" + (@($child.Keys | Sort-Object) -join ',')`;
-    const run = spawnSync(psShell, ['-NoProfile', '-NonInteractive', '-Command', script], {
-      windowsHide: true,
-      encoding: 'utf8',
-      env: testEnvironment(),
-    });
-    assertOk(run);
-    assert.match(
-      run.stdout,
-      /LEFT=GCM_INTERACTIVE,GIT_CONFIG_COUNT,GIT_CONFIG_NOSYSTEM,GIT_TERMINAL_PROMPT/,
-      run.stdout,
-    );
-  },
-  {},
-);
-
-// Round 5, finding 2: GIT_CONFIG_GLOBAL and GIT_CONFIG_SYSTEM are not scrubbed. A user who moved the global config with GIT_CONFIG_GLOBAL
-// keeps the credential helper it names, and the guard reads the same file that the status does.
-test(
-  'the child environment keeps GIT_CONFIG_GLOBAL and GIT_CONFIG_SYSTEM, which name the config git reads',
-  { skip },
-  () => {
-    const script = `$ErrorActionPreference = 'Stop'; . '${layerSourcesFile}'; $child = [System.Collections.Generic.Dictionary[string, string]]::new([StringComparer]::OrdinalIgnoreCase); $child['GIT_CONFIG_GLOBAL'] = 'x'; $child['GIT_CONFIG_SYSTEM'] = 'x'; Set-GitChildEnvironment -Environment $child -Settings @(); "LEFT=" + (@($child.Keys | Sort-Object) -join ',')`;
-    const run = spawnSync(psShell, ['-NoProfile', '-NonInteractive', '-Command', script], {
-      windowsHide: true,
-      encoding: 'utf8',
-      env: testEnvironment(),
-    });
-    assertOk(run);
-    assert.match(
-      run.stdout,
-      /LEFT=GCM_INTERACTIVE,GIT_CONFIG_COUNT,GIT_CONFIG_GLOBAL,GIT_CONFIG_SYSTEM,GIT_TERMINAL_PROMPT/,
-      run.stdout,
-    );
-  },
-  {},
-);
-
-// Round 5, finding 3: GIT_ALLOW_PROTOCOL overrides protocol.allow, so a child that inherits it would run a transport the guard refuses.
-// This run is not a test run, so the file transport is refused by the guard, and the inherited variable must not allow it.
-test(
-  'a guarded ls-remote over file transport is refused in a real run, even when the installer environment allows file',
-  { skip },
-  () => {
-    const base = mkdtempSync(join(tmpdir(), 'maxstack-protocol-'));
-    try {
-      const remote = bareRepoWithCommit(base, 'remote', 'the remote');
-      const env = { ...process.env, GIT_ALLOW_PROTOCOL: 'file' };
-      delete env.MAXSTACK_TEST_MODE;
-      const script = `$ErrorActionPreference = 'Stop'; . '${layerSourcesFile}'; $run = Invoke-GitGuarded -Arguments @('ls-remote', '--', 'file:///${remote.replace(/\\/g, '/')}'); "CODE=$($run.code) ERR=$(@($run.stderr) -join ' ')"`;
-      const run = spawnSync(psShell, ['-NoProfile', '-NonInteractive', '-Command', script], {
-        windowsHide: true,
-        encoding: 'utf8',
-        env,
-      });
-      assertOk(run);
-      assert.doesNotMatch(
-        run.stdout,
-        /CODE=0 /,
-        'the guard read a file remote, because GIT_ALLOW_PROTOCOL allowed the transport',
-      );
-      assert.match(run.stdout, /CODE=128 .*not allowed/, run.stdout);
-    } finally {
-      rmSync(base, { recursive: true, force: true });
-    }
-  },
-  {},
-);
-
-// Round 5, finding 5: git never prompts for a credential, and runs no askpass program. The guard sets core.askPass to the empty string,
-// which overrides the global value, and the child loses GIT_ASKPASS and SSH_ASKPASS. The askpass program writes a marker when it runs.
-test(
-  'a guarded credential fill runs no askpass program that the global config names',
-  { skip },
-  () => {
-    const base = mkdtempSync(join(tmpdir(), 'maxstack-askpass-'));
-    try {
-      const marker = join(base, 'askpass-marker.txt');
-      // git runs core.askPass as a program, not through a shell, so the program is a script that writes the marker and answers.
-      const askpassScript = join(base, 'askpass.sh');
-      writeFileSync(askpassScript, `#!/bin/sh\ntouch '${marker.replace(/\\/g, '/')}'\necho x\n`);
-      chmodSync(askpassScript, 0o755);
-      const env = homeEnv(join(base, 'home'), [
-        ['core.askPass', askpassScript.replace(/\\/g, '/')],
-      ]);
-      const input = 'protocol=https\nhost=example.invalid\n\n';
-      // The fixture runs git with prompts on, so the askpass program runs, and a marker that is missing after the guard is a result.
-      const fixture = spawnSync('git', ['credential', 'fill'], {
-        windowsHide: true,
-        input,
-        encoding: 'utf8',
-        env: { ...env, GIT_TERMINAL_PROMPT: '1' },
-      });
-      assert.equal(
-        existsSync(marker),
-        true,
-        `the fixture did not run the askpass program when git was not guarded: ${fixture.stderr}`,
-      );
-      rmSync(marker);
-
-      const script = `$ErrorActionPreference = 'Stop'; . '${layerSourcesFile}'; $run = Invoke-GitGuarded -Arguments @('credential', 'fill'); "CODE=$($run.code)"`;
-      const guarded = spawnSync(psShell, ['-NoProfile', '-NonInteractive', '-Command', script], {
-        windowsHide: true,
-        input,
-        encoding: 'utf8',
-        env: testEnvironment(env),
-      });
-      assertOk(guarded);
-      assert.equal(
-        existsSync(marker),
-        false,
-        'the guarded credential fill ran the askpass program that core.askPass names',
-      );
-    } finally {
-      rmSync(base, { recursive: true, force: true });
-    }
-  },
-  {},
-);
-
-test(
-  'a guarded command reads the global config that GIT_CONFIG_GLOBAL names, and its credential helper',
-  { skip },
-  () => {
-    const base = mkdtempSync(join(tmpdir(), 'maxstack-global-'));
-    try {
-      const home = join(base, 'home');
-      const env = homeEnv(home);
-      const relocated = join(base, 'relocated.gitconfig');
-      runGit(base, ['config', '-f', relocated, 'credential.helper', 'relocated-helper']);
-      const script = `$ErrorActionPreference = 'Stop'; . '${layerSourcesFile}'; $run = Invoke-GitGuarded -Arguments @('config', '--get', 'credential.helper'); "CODE=$($run.code) VALUE=$(@($run.stdout) -join ',')"`;
-      const run = spawnSync(psShell, ['-NoProfile', '-NonInteractive', '-Command', script], {
-        windowsHide: true,
-        encoding: 'utf8',
-        env: testEnvironment({ ...env, GIT_CONFIG_GLOBAL: relocated.replace(/\\/g, '/') }),
-      });
-      assertOk(run);
-      assert.match(run.stdout, /CODE=0 VALUE=relocated-helper/, run.stdout);
-    } finally {
-      rmSync(base, { recursive: true, force: true });
-    }
-  },
-  {},
-);
-
-// Finding 7: the older filter fixtures again, with the attribute line in .git/info/attributes, so the name rule is what runs.
 withWorkspace(
   'an audit runs no clean filter whose command has a dot in it, when .git/info/attributes names it',
   (ctx) => {
@@ -2935,7 +2104,7 @@ withWorkspace(
     );
     rmSync(marker);
 
-    const audit = runInstaller(shell, ctx, ['-Source', `org-ai-plugin=local:${checkout}`], {
+    const audit = runInstaller(ctx, ['-Source', `org-ai-plugin=local:${checkout}`], {
       apply: false,
     });
     assertOk(audit);
@@ -2963,7 +2132,7 @@ withWorkspace(
     );
     rmSync(marker);
 
-    const audit = runInstaller(shell, ctx, ['-Source', `org-ai-plugin=local:${checkout}`], {
+    const audit = runInstaller(ctx, ['-Source', `org-ai-plugin=local:${checkout}`], {
       apply: false,
     });
     assertOk(audit);
@@ -2994,7 +2163,7 @@ withWorkspace(
     );
     rmSync(marker);
 
-    const audit = runInstaller(shell, ctx, ['-Source', `org-ai-plugin=local:${checkout}`], {
+    const audit = runInstaller(ctx, ['-Source', `org-ai-plugin=local:${checkout}`], {
       apply: false,
     });
     assertOk(audit);
@@ -3024,7 +2193,7 @@ withWorkspace(
     );
     rmSync(marker);
 
-    const audit = runInstaller(shell, ctx, ['-Source', `org-ai-plugin=local:${checkout}`], {
+    const audit = runInstaller(ctx, ['-Source', `org-ai-plugin=local:${checkout}`], {
       apply: false,
     });
     assertOk(audit);
@@ -3038,56 +2207,6 @@ withWorkspace(
 );
 
 // Finding 7: the guard turns off core.hooksPath too. A commit the guard runs must not run the hook the tree names.
-test(
-  'a commit the guard runs runs no hook that the tree names in core.hooksPath',
-  { skip },
-  () => {
-    const base = mkdtempSync(join(tmpdir(), 'maxstack-hooks-'));
-    try {
-      const tree = join(base, 'tree');
-      mkdirSync(tree);
-      runGit(tree, ['init', '-q']);
-      const marker = join(base, 'hook-marker.txt');
-      const hooks = join(base, 'hooks');
-      writeFile(base, 'hooks/pre-commit', `#!/bin/sh\ntouch '${marker.replace(/\\/g, '/')}'\n`);
-      chmodSync(join(hooks, 'pre-commit'), 0o755);
-      runGit(tree, ['config', 'core.hooksPath', hooks.replace(/\\/g, '/')]);
-      runGit(tree, ['commit', '-q', '--allow-empty', '-m', 'fixture']);
-      assert.equal(
-        existsSync(marker),
-        true,
-        'the fixture did not run the hook when git was not guarded',
-      );
-      rmSync(marker);
-
-      const env = {
-        ...testEnvironment(),
-        GIT_AUTHOR_NAME: 'test',
-        GIT_AUTHOR_EMAIL: 'test@example.invalid',
-        GIT_COMMITTER_NAME: 'test',
-        GIT_COMMITTER_EMAIL: 'test@example.invalid',
-      };
-      const script = `$ErrorActionPreference = 'Stop'; . '${layerSourcesFile}'; $tree = '${tree.replace(/\\/g, '/')}'; $run = Invoke-GitGuarded -Dir $tree -Arguments @('-C', $tree, 'commit', '-q', '--allow-empty', '-m', 'guarded'); "CODE=$($run.code)"`;
-      const run = spawnSync(psShell, ['-NoProfile', '-NonInteractive', '-Command', script], {
-        windowsHide: true,
-        encoding: 'utf8',
-        env,
-      });
-      assertOk(run);
-      assert.match(run.stdout, /CODE=0/, run.stdout);
-      assert.equal(
-        existsSync(marker),
-        false,
-        'the guarded commit ran the hook that core.hooksPath names',
-      );
-    } finally {
-      rmSync(base, { recursive: true, force: true });
-    }
-  },
-  {},
-);
-
-// Finding 8: a tree whose config git cannot parse is not "not a repository". git stops with a parse error, so it is unreadable.
 withWorkspace(
   'a tree whose config git cannot parse is reported unreadable, not as a folder that is not a checkout',
   (ctx) => {
@@ -3101,7 +2220,7 @@ withWorkspace(
     });
     assert.notEqual(fixture.status, 0, 'the fixture config parsed, so the tree is not broken');
 
-    const audit = runInstaller(shell, ctx, ['-Source', `org-ai-plugin=local:${checkout}`], {
+    const audit = runInstaller(ctx, ['-Source', `org-ai-plugin=local:${checkout}`], {
       apply: false,
     });
     assertOk(audit);
@@ -3116,7 +2235,7 @@ withWorkspace(
       plainOutput(audit),
     );
     assert.notEqual(
-      runInstaller(shell, ctx, ['-Source', `org-ai-plugin=local:${checkout}`]).status,
+      runInstaller(ctx, ['-Source', `org-ai-plugin=local:${checkout}`]).status,
       0,
       'an apply wrote a layer from a tree whose config it cannot read',
     );
@@ -3143,7 +2262,7 @@ withWorkspace(
       'the fixture config does not parse for git, so the case is not the name length',
     );
 
-    const audit = runInstaller(shell, ctx, ['-Source', `org-ai-plugin=local:${checkout}`], {
+    const audit = runInstaller(ctx, ['-Source', `org-ai-plugin=local:${checkout}`], {
       apply: false,
     });
     assertOk(audit);
@@ -3171,7 +2290,7 @@ withWorkspace(
     ).join('');
     appendFileSync(join(checkout, '.git', 'config'), lines);
 
-    const audit = runInstaller(shell, ctx, ['-Source', `org-ai-plugin=local:${checkout}`], {
+    const audit = runInstaller(ctx, ['-Source', `org-ai-plugin=local:${checkout}`], {
       apply: false,
     });
     assertOk(audit);
@@ -3189,41 +2308,6 @@ withWorkspace(
   {},
 );
 
-test(
-  'a cut-off read of the tree config is unreadable, not a list with no filter names',
-  { skip },
-  () => {
-    const script = `$ErrorActionPreference = 'Stop'; . '${layerSourcesFile}'; function Invoke-GitProcess { param($Arguments, $Settings, $TimeoutSeconds = 0, $WorkingDirectory = '', $CeilingDirectory = '') [pscustomobject]@{ unreadable = $null; timedOut = $false; code = 0; text = ''; stdout = @(); stderr = @(); incomplete = (@($Arguments) -contains 'config') } }; $info = Read-TreeFilterNames -Dir 'C:/nowhere'; "FAULT=[$($info.fault)]"`;
-    const run = spawnSync(psShell, ['-NoProfile', '-NonInteractive', '-Command', script], {
-      windowsHide: true,
-      encoding: 'utf8',
-      env: testEnvironment(),
-    });
-    assertOk(run);
-    assert.match(run.stdout, /FAULT=\[.*cut off/, run.stdout);
-  },
-  {},
-);
-
-// Finding 10: core.fsmonitor is off with the empty string, which git reads as no monitor on every version. On git 2.31 to 2.35
-// "false" is read as a path, so the value that means off is the empty string.
-test(
-  'the guard turns core.fsmonitor off with the empty string, which no git version reads as a path',
-  { skip },
-  () => {
-    const script = `$ErrorActionPreference = 'Stop'; . '${layerSourcesFile}'; $setting = Get-GitGuardSettings | Where-Object { $_.key -eq 'core.fsmonitor' }; "FSM=[$($setting.value)] COUNT=$(@(Get-GitGuardSettings | Where-Object { $_.key -eq 'core.fsmonitor' }).Count)"`;
-    const run = spawnSync(psShell, ['-NoProfile', '-NonInteractive', '-Command', script], {
-      windowsHide: true,
-      encoding: 'utf8',
-      env: testEnvironment(),
-    });
-    assertOk(run);
-    assert.match(run.stdout, /FSM=\[\] COUNT=1/, run.stdout);
-  },
-  {},
-);
-
-// Finding 11: the eol attributes that the status now reads must not hide a real change. A changed eol=crlf file is dirty.
 withWorkspace(
   'a changed eol=crlf file reads as uncommitted changes, so the tree attributes do not hide an edit',
   (ctx) => {
@@ -3238,7 +2322,7 @@ withWorkspace(
     writeFile(checkout, 'tool.ps1', 'one\r\nthree\r\n');
     bumpMtime(join(checkout, 'tool.ps1'));
 
-    const audit = runInstaller(shell, ctx, ['-Source', `org-ai-plugin=local:${checkout}`], {
+    const audit = runInstaller(ctx, ['-Source', `org-ai-plugin=local:${checkout}`], {
       apply: false,
     });
     assertOk(audit);
@@ -3260,7 +2344,7 @@ withWorkspace(
     runGit(checkout, ['init', '-q', '--object-format=sha256']);
     runGit(checkout, ['add', '-A']);
     runGit(checkout, ['commit', '-q', '-m', 'layer']);
-    const audit = runInstaller(shell, ctx, ['-Source', `org-ai-plugin=local:${checkout}`], {
+    const audit = runInstaller(ctx, ['-Source', `org-ai-plugin=local:${checkout}`], {
       apply: false,
     });
     assertOk(audit);
@@ -3275,60 +2359,6 @@ withWorkspace(
 
 // Finding 10: git that exits 0 while a grandchild holds its output open gives an incomplete read. That is a cut-off output,
 // not a result, so the ref lookup says so instead of "no branch or tag named".
-test(
-  'a ref lookup whose git output was cut off says so, and does not report a missing ref',
-  { skip },
-  () => {
-    const script = `$ErrorActionPreference = 'Stop'; . '${layerSourcesFile}'; function Invoke-GitGuarded { [pscustomobject]@{ unreadable = $null; timedOut = $false; code = 0; text = ''; stdout = @(); stderr = @(); incomplete = $true } }; try { Find-GitRefCommit -Url 'https://example.com/team/layer.git' -Ref 'main' } catch { "ERR=$($_.Exception.Message)" }`;
-    const run = spawnSync(psShell, ['-NoProfile', '-NonInteractive', '-Command', script], {
-      windowsHide: true,
-      encoding: 'utf8',
-      env: testEnvironment(),
-    });
-    assertOk(run);
-    assert.match(run.stdout, /ERR=.*git output was cut off/, run.stdout);
-    assert.doesNotMatch(run.stdout, /no branch or tag named/, run.stdout);
-  },
-  {},
-);
-
-// ---- Round 5, finding 1: git's output is read as bytes and decoded strictly. A filter name that is not valid UTF-8 cannot be
-// written as a string, so the config and attribute bytes are written as a Buffer. The guard must refuse that tree, since a name it
-// cannot read back exactly is a filter it cannot turn off.
-const INVALID_NAME = Buffer.from([0xff]);
-
-// A [filter] section whose subsection name is the given bytes, with a clean command. The value is quoted as a whole, since an
-// unquoted ";" starts a comment, and its quotes and backslashes are escaped, so git reads the command that is given.
-function rawFilterSection(nameBytes, command) {
-  const value = `"${command.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
-  return Buffer.concat([
-    Buffer.from('[filter "'),
-    nameBytes,
-    Buffer.from(`"]\n\tclean = ${value}\n`),
-  ]);
-}
-
-// A local checkout whose .git/config defines a filter by raw name bytes, and whose attributes name it in the file given. A committed
-// .gitattributes is committed before the filter is defined. A same-size edit makes git run the clean command when it reads the file.
-function rawNameCheckout(ctx, { attributesFile, attributes, nameBytes, command }) {
-  const checkout = join(ctx.base, 'org-checkout');
-  writeLayerStub(checkout, { claudePlugin: 'org-ai-plugin' });
-  runGit(checkout, ['init', '-q']);
-  writeFile(checkout, 'notes.txt', 'one\n');
-  writeFile(checkout, attributesFile, attributes);
-  runGit(checkout, ['add', '-A']);
-  runGit(checkout, ['commit', '-q', '-m', 'layer']);
-  appendFileSync(join(checkout, '.git', 'config'), rawFilterSection(nameBytes, command));
-  writeFile(checkout, 'notes.txt', 'two\n');
-  runGit(checkout, ['hash-object', '--path=notes.txt', 'notes.txt']);
-  bumpMtime(join(checkout, 'notes.txt'));
-  return checkout;
-}
-
-// The attribute line "<prefix>filter=<invalid byte>", as bytes.
-const invalidAttributes = (prefix) =>
-  Buffer.concat([Buffer.from(`${prefix}filter=`), INVALID_NAME, Buffer.from('\n')]);
-
 withWorkspace(
   'an audit turns off no filter whose name is not valid UTF-8 in .git/info/attributes, and reports the tree unreadable',
   (ctx) => {
@@ -3346,7 +2376,7 @@ withWorkspace(
     );
     rmSync(marker);
 
-    const audit = runInstaller(shell, ctx, ['-Source', `org-ai-plugin=local:${checkout}`], {
+    const audit = runInstaller(ctx, ['-Source', `org-ai-plugin=local:${checkout}`], {
       apply: false,
     });
     assertOk(audit);
@@ -3361,7 +2391,7 @@ withWorkspace(
       plainOutput(audit),
     );
 
-    const apply = runInstaller(shell, ctx, ['-Source', `org-ai-plugin=local:${checkout}`]);
+    const apply = runInstaller(ctx, ['-Source', `org-ai-plugin=local:${checkout}`]);
     assert.notEqual(
       apply.status,
       0,
@@ -3398,7 +2428,7 @@ withWorkspace(
     );
     rmSync(marker);
 
-    const audit = runInstaller(shell, ctx, ['-Source', `org-ai-plugin=local:${checkout}`], {
+    const audit = runInstaller(ctx, ['-Source', `org-ai-plugin=local:${checkout}`], {
       apply: false,
     });
     assertOk(audit);
@@ -3416,50 +2446,6 @@ withWorkspace(
   {},
 );
 
-test(
-  'a checkout state whose filter name is not valid UTF-8 is unreadable, with no commit, and runs no filter',
-  { skip },
-  () => {
-    const base = mkdtempSync(join(tmpdir(), 'maxstack-invalid-name-'));
-    try {
-      const marker = join(base, 'state-marker.txt');
-      const checkout = join(base, 'tree');
-      mkdirSync(checkout);
-      runGit(checkout, ['init', '-q']);
-      writeFile(checkout, 'notes.txt', 'one\n');
-      writeFile(checkout, '.gitattributes', invalidAttributes('*.txt '));
-      runGit(checkout, ['add', '-A']);
-      runGit(checkout, ['commit', '-q', '-m', 'tree']);
-      appendFileSync(
-        join(checkout, '.git', 'config'),
-        rawFilterSection(INVALID_NAME, touchAndCat(marker)),
-      );
-      writeFile(checkout, 'notes.txt', 'two\n');
-      bumpMtime(join(checkout, 'notes.txt'));
-
-      const run = spawnSync(
-        shell,
-        ['-NoProfile', '-NonInteractive', '-Command', checkoutStateScript(checkout)],
-        { windowsHide: true, encoding: 'utf8', env: testEnvironment() },
-      );
-      assertOk(run);
-      assert.match(
-        run.stdout,
-        /COMMIT= DIRTY= UNREADABLE=a filter driver name is not valid UTF-8/,
-        run.stdout,
-      );
-      assert.equal(
-        existsSync(marker),
-        false,
-        'the checkout state ran the clean command of a filter whose name is not valid UTF-8',
-      );
-    } finally {
-      rmSync(base, { recursive: true, force: true });
-    }
-  },
-  {},
-);
-
 withWorkspace(
   'a global filter name that is not valid UTF-8 makes a local status report the tree unreadable, and runs no filter',
   (ctx) => {
@@ -3469,7 +2455,7 @@ withWorkspace(
     appendFileSync(join(home, '.gitconfig'), rawFilterSection(INVALID_NAME, touchAndCat(marker)));
     const checkout = markedCheckoutWithCommit(ctx);
 
-    const audit = runInstaller(shell, ctx, ['-Source', `org-ai-plugin=local:${checkout}`], {
+    const audit = runInstaller(ctx, ['-Source', `org-ai-plugin=local:${checkout}`], {
       apply: false,
       env,
     });
@@ -3505,7 +2491,7 @@ withWorkspace(
     );
     rmSync(marker);
 
-    const audit = runInstaller(shell, ctx, ['-Source', `org-ai-plugin=local:${checkout}`], {
+    const audit = runInstaller(ctx, ['-Source', `org-ai-plugin=local:${checkout}`], {
       apply: false,
     });
     assertOk(audit);
@@ -3519,36 +2505,6 @@ withWorkspace(
 );
 
 // A ref name is read strictly too: a name that is not valid UTF-8 is an error that says so, never a name with U+FFFD in it.
-test(
-  'a ref lookup whose ref name is not valid UTF-8 fails with that reason, and reads no ref with a replaced name',
-  { skip },
-  () => {
-    const base = mkdtempSync(join(tmpdir(), 'maxstack-invalid-ref-'));
-    try {
-      const remote = bareRepoWithCommit(base, 'remote', 'the remote');
-      const sha = runGit(remote, ['rev-parse', 'main']);
-      appendFileSync(
-        join(remote, 'packed-refs'),
-        Buffer.concat([Buffer.from(`${sha} refs/heads/`), INVALID_NAME, Buffer.from('\n')]),
-      );
-      const script = `$ErrorActionPreference = 'Stop'; . '${layerSourcesFile}'; try { $ref = Find-GitRefCommit -Url '${remote.replace(/\\/g, '/')}' -Ref 'main'; "REF=$ref" } catch { "ERR=$($_.Exception.Message)" }`;
-      const run = spawnSync(psShell, ['-NoProfile', '-NonInteractive', '-Command', script], {
-        windowsHide: true,
-        encoding: 'utf8',
-        env: testEnvironment(),
-      });
-      assertOk(run);
-      assert.match(run.stdout, /ERR=.*git output is not valid UTF-8/, run.stdout);
-      assert.doesNotMatch(run.stdout, /REF=/, run.stdout);
-    } finally {
-      rmSync(base, { recursive: true, force: true });
-    }
-  },
-  {},
-);
-
-// Round 5, finding 4a: git refuses a folder that another user owns. The reason names that, and the apply names the fix for it, not
-// the tree's config. GIT_TEST_ASSUME_DIFFERENT_OWNER makes git see a different owner on every folder.
 withWorkspace(
   'a folder git refuses as owned by another user is unreadable for that reason, and an apply names the fix for it',
   (ctx) => {
@@ -3570,7 +2526,7 @@ withWorkspace(
     };
     const source = ['-Source', `org-ai-plugin=local:${checkout}`];
 
-    const audit = runInstaller(shell, ctx, source, { apply: false, env });
+    const audit = runInstaller(ctx, source, { apply: false, env });
     assertOk(audit);
     assert.match(
       plainOutput(audit),
@@ -3579,7 +2535,7 @@ withWorkspace(
     );
     assert.doesNotMatch(plainOutput(audit), /config cannot be read/, plainOutput(audit));
 
-    const apply = runInstaller(shell, ctx, source, { env });
+    const apply = runInstaller(ctx, source, { env });
     assert.notEqual(apply.status, 0, 'an apply wrote a layer from a folder git refused');
     assert.match(
       plainOutput(apply),
@@ -3609,7 +2565,7 @@ withWorkspace(
     assert.notEqual(fixture.status, 0, 'the fixture global config parsed, so git reads it');
     const source = ['-Source', `org-ai-plugin=local:${checkout}`];
 
-    const audit = runInstaller(shell, ctx, source, { apply: false, env });
+    const audit = runInstaller(ctx, source, { apply: false, env });
     assertOk(audit);
     assert.match(
       plainOutput(audit),
@@ -3618,7 +2574,7 @@ withWorkspace(
     );
     assert.doesNotMatch(plainOutput(audit), /git 2\.31 or later is needed/, plainOutput(audit));
 
-    const apply = runInstaller(shell, ctx, source, { env });
+    const apply = runInstaller(ctx, source, { env });
     assert.notEqual(apply.status, 0, 'an apply wrote a layer while git could not read its config');
     assert.match(
       plainOutput(apply),
@@ -3630,47 +2586,10 @@ withWorkspace(
 );
 
 // Round 5, finding 4b: a git older than 2.31 is named as too old, and a git that cannot run is named with its reason.
-test(
-  'a git that is too old is named as too old, a git that is new enough gives its own config error, and a git that cannot start says so',
-  { skip },
-  () => {
-    // A git older than 2.31 ignores the settings, so its probe is silent. A git whose config cannot be parsed prints git's error.
-    const script = `$ErrorActionPreference = 'Stop'; . '${layerSourcesFile}'; function Get-GitVersion { [version] '2.30' }; $old = Get-GitEnvConfigFault ([pscustomobject]@{ code = 1; stderr = @() }); "OLD=$old"; function Get-GitVersion { [version] '2.55' }; $new = Get-GitEnvConfigFault ([pscustomobject]@{ code = 128; stderr = @('fatal: bad config line 1') }); "NEW=$new"; $silent = Get-GitEnvConfigFault ([pscustomobject]@{ code = 1; stderr = @() }); "SILENT=$silent"; function Get-GitVersion { $null }; $absent = Get-GitEnvConfigFault ([pscustomobject]@{ code = $null; stderr = @('git could not start: no such file') }); "ABSENT=$absent"`;
-    const run = spawnSync(psShell, ['-NoProfile', '-NonInteractive', '-Command', script], {
-      windowsHide: true,
-      encoding: 'utf8',
-      env: testEnvironment(),
-    });
-    assertOk(run);
-    assert.match(
-      run.stdout,
-      /OLD=git 2\.31 or later is needed, so the filter guard cannot be passed/,
-      run.stdout,
-    );
-    assert.match(
-      run.stdout,
-      /NEW=git could not read its configuration, so the filter guard cannot be passed: fatal: bad config line 1/,
-      run.stdout,
-    );
-    assert.match(
-      run.stdout,
-      /SILENT=git did not read the guard settings, so the filter guard cannot be passed/,
-      run.stdout,
-    );
-    assert.match(
-      run.stdout,
-      /ABSENT=git 2\.31 or later is needed, so the filter guard cannot be passed: git could not start: no such file/,
-      run.stdout,
-    );
-  },
-  {},
-);
-
 withWorkspace(
   'workspace discovery rejects control characters before path APIs and escapes them in errors',
   (ctx) => {
     const esc = String.fromCharCode(27);
-    const del = String.fromCharCode(127);
     const unsafe = `bad${esc}[31m`;
     const cases = [
       { kind: 'explicit', path: unsafe, safe: 'bad\\u001B[31m' },
@@ -3752,36 +2671,17 @@ withWorkspace(
     const copyRoot = join(ctx.base, 'isolated-copy');
     const copyScripts = join(copyRoot, 'scripts');
     mkdirSync(copyScripts, { recursive: true });
-    cpSync(installer, join(copyScripts, 'Install-Workspace.ps1'));
-    cpSync(
-      join(repoRoot, 'scripts', 'Install-WorkspaceDiscovery.ps1'),
-      join(copyScripts, 'Install-WorkspaceDiscovery.ps1'),
-    );
-    cpSync(
-      join(repoRoot, 'scripts', 'Install-Ordinal.ps1'),
-      join(copyScripts, 'Install-Ordinal.ps1'),
-    );
-    cpSync(join(repoRoot, 'scripts', 'Install-Paths.ps1'), join(copyScripts, 'Install-Paths.ps1'));
-    cpSync(join(repoRoot, 'scripts', 'Install-Links.ps1'), join(copyScripts, 'Install-Links.ps1'));
-    cpSync(
-      join(repoRoot, 'scripts', 'Install-Cursor.ps1'),
-      join(copyScripts, 'Install-Cursor.ps1'),
-    );
+    cpSync(join(repoRoot, 'scripts', 'install'), join(copyScripts, 'install'), {
+      recursive: true,
+    });
     const before = snapshotTree(ctx.base);
 
     const env = { ...process.env };
     for (const key of Object.keys(env))
       if (key.toUpperCase() === 'MAXSTACK_WORKSPACE') delete env[key];
     const run = spawnSync(
-      shell,
-      [
-        '-NoProfile',
-        '-NonInteractive',
-        '-File',
-        join(copyScripts, 'Install-Workspace.ps1'),
-        '-Apply',
-        '-Status',
-      ],
+      process.execPath,
+      [join(copyScripts, 'install', 'main.ts'), '-Apply', '-Status'],
       {
         windowsHide: true,
         encoding: 'utf8',
@@ -3803,7 +2703,6 @@ withWorkspace(
   {},
 );
 
-// N6: a read-only audit names a valid declared source, and an unavailable one is not listed as an override in the pin block.
 withWorkspace(
   'item N6: an audit names a valid declared source, and an unavailable one is listed as skipped, not as an override',
   (ctx) => {
@@ -3812,7 +2711,7 @@ withWorkspace(
       version: 1,
       layers: { pstack: { source: 'example/fixture@main' } },
     });
-    const valid = runInstaller(shell, ctx, [], { apply: false });
+    const valid = runInstaller(ctx, [], { apply: false });
     assertOk(valid, plainOutput(valid));
     assert.match(
       plainOutput(valid),
@@ -3820,7 +2719,7 @@ withWorkspace(
       plainOutput(valid),
     );
     writeWorkspaceSettings(ctx, { version: 1, layers: { pstack: { source: 'local:nope' } } });
-    const unavailable = runInstaller(shell, ctx, [], { apply: false });
+    const unavailable = runInstaller(ctx, [], { apply: false });
     assertOk(unavailable, plainOutput(unavailable));
     assert.doesNotMatch(
       plainOutput(unavailable),
@@ -3835,3 +2734,78 @@ withWorkspace(
   },
   {},
 );
+
+function runGit(dir, args, env = process.env) {
+  const run = spawnSync(
+    'git',
+    ['-c', 'user.name=test', '-c', 'user.email=test@example.invalid', ...args],
+    { windowsHide: true, cwd: dir, encoding: 'utf8', env },
+  );
+  assert.equal(run.status, 0, `git ${args.join(' ')} failed: ${run.stderr}`);
+  return run.stdout.trim();
+}
+
+// The environment whose HOME holds a .gitconfig with the given settings, which is the user's global config.
+function homeEnv(home, settings = []) {
+  mkdirSync(home, { recursive: true });
+  const file = join(home, '.gitconfig');
+  writeFileSync(file, '');
+  for (const [key, value] of settings) runGit(home, ['config', '-f', file, key, value]);
+  return {
+    ...process.env,
+    HOME: home,
+    USERPROFILE: home,
+    XDG_CONFIG_HOME: join(home, '.config'),
+    GIT_CONFIG_NOSYSTEM: '1',
+  };
+}
+
+// The environment with a user global config that holds one setting. The file is outside the checkout.
+function globalGitEnv(ctx, key, value) {
+  return homeEnv(join(ctx.base, 'home'), [[key, value]]);
+}
+
+// A local checkout with one committed file, and a .gitattributes that names the mark filter on text files.
+function markedCheckoutWithCommit(ctx) {
+  const checkout = join(ctx.base, 'org-checkout');
+  writeLayerStub(checkout, { claudePlugin: 'org-ai-plugin' });
+  writeFile(checkout, 'notes.txt', 'one\n');
+  runGit(checkout, ['init', '-q']);
+  runGit(checkout, ['add', '-A']);
+  runGit(checkout, ['commit', '-q', '-m', 'layer']);
+  return checkout;
+}
+
+const INVALID_NAME = Buffer.from([0xff]);
+
+// A [filter] section whose subsection name is the given bytes, with a clean command.
+function rawFilterSection(nameBytes, command) {
+  const value = `"${command.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+  return Buffer.concat([
+    Buffer.from('[filter "'),
+    nameBytes,
+    Buffer.from(`"]\n\tclean = ${value}\n`),
+  ]);
+}
+
+// A local checkout whose .git/config defines a filter by raw name bytes, and whose attributes name it in the file given.
+function rawNameCheckout(ctx, { attributesFile, attributes, nameBytes, command }) {
+  const checkout = join(ctx.base, 'org-checkout');
+  writeLayerStub(checkout, { claudePlugin: 'org-ai-plugin' });
+  runGit(checkout, ['init', '-q']);
+  writeFile(checkout, 'notes.txt', 'one\n');
+  writeFile(checkout, attributesFile, attributes);
+  runGit(checkout, ['add', '-A']);
+  runGit(checkout, ['commit', '-q', '-m', 'layer']);
+  appendFileSync(join(checkout, '.git', 'config'), rawFilterSection(nameBytes, command));
+  writeFile(checkout, 'notes.txt', 'two\n');
+  runGit(checkout, ['hash-object', '--path=notes.txt', 'notes.txt']);
+  bumpMtime(join(checkout, 'notes.txt'));
+  return checkout;
+}
+
+// The attribute line "<prefix>filter=<invalid byte>", as bytes.
+const invalidAttributes = (prefix) =>
+  Buffer.concat([Buffer.from(`${prefix}filter=`), INVALID_NAME, Buffer.from('\n')]);
+
+const touchAndCat = (marker) => `sh -c "touch '${marker.replace(/\\/g, '/')}'; cat"`;

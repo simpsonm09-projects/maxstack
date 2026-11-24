@@ -37,9 +37,9 @@ validate:
 validate-online:
     mise exec -- python scripts/verify-manifests.py --online
 
-# Run the full node test suite under scripts/. The installer tests need PowerShell 7 and git; a missing program skips its test.
+# Run the fast Node tests, the same files the `test-node` CI job runs.
 test-node:
-    mise exec -- node --test --test-concurrency=4 scripts/*.test.mjs
+    mise exec -- node --test --test-concurrency=4 scripts/generate-layers.test.mjs scripts/verify-manifests.test.mjs scripts/verify-pi-harness.test.mjs
 
 # Run the installer fixture lifecycle under Bun. The portable workflow runs it on Linux.
 test-linux:
@@ -53,7 +53,7 @@ install-workspace *args:
 # Run the checks the required pull request path can afford: the manifest verifier and the fast Node tests.
 test:
     mise exec -- python scripts/verify-manifests.py
-    mise exec -- node --test scripts/ordinal-guard.test.mjs scripts/generate-layers.test.mjs scripts/verify-manifests.test.mjs scripts/verify-pi-harness.test.mjs
+    mise exec -- node --test scripts/generate-layers.test.mjs scripts/verify-manifests.test.mjs scripts/verify-pi-harness.test.mjs
 
 # Run the lint, test, and AI-slop gates.
 verify: lint test aislop

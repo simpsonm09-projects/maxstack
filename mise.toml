@@ -15,14 +15,13 @@
 "aqua:rhysd/actionlint" = "1.7.12"
 "aqua:zizmorcore/zizmor" = "1.30.1"
 
-# JavaScript toolchain. Bun formats and lints the .mjs scripts; Node still runs
-# the node:test suites until the C7.3 migration.
+# JavaScript toolchain. Bun formats and lints the .mjs scripts and runs the
+# installer suites; Node still runs the fast node:test suites.
 bun = "1.4.5"
 node = "26.13.1"
 "npm:oxlint" = "1.93.0"
 
-# The manifest verifier and the generator tests are Python; TypeScript cannot
-# replace them without the C7.4 migration.
+# The manifest verifier and the generator tests are Python; they stay Python.
 python = "3.12"
 
 # Linters

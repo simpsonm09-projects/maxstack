@@ -49,7 +49,7 @@ After an install, restart the running OpenCode server before using a new T3 sess
 | `just validate-online` | Also checks the pstack pin against GitHub. Needs `git` and network. |
 | `just install-workspace` | Runs the TypeScript workspace installer. It prints the plan and writes nothing unless `-Apply` is given. |
 | `just test` | Runs the manifest verifier and the fast Node tests. |
-| `just test-node` | Runs the full node test suite under `scripts/`. Needs Node, PowerShell 7, and git; it is a local check, not a CI job. |
+| `just test-node` | Runs the fast Node test files under `scripts/`. Needs Node and git; it is a local check, not a CI job. |
 | `just test-linux` | Runs the installer fixture lifecycle under Bun on Linux; the `portable` workflow runs it. |
 | `just check` | Runs everything CI requires locally: format, lint, and test. |
 | `just verify` | Runs lint, test, and the AI-slop gate. |

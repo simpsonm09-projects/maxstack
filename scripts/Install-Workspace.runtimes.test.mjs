@@ -3,7 +3,6 @@
 
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
 import {
   existsSync,
   writeFileSync,
@@ -14,12 +13,10 @@ import {
   renameSync,
   rmSync,
   statSync,
-  mkdtempSync,
   appendFileSync,
   symlinkSync,
   copyFileSync,
 } from 'node:fs';
-import { tmpdir } from 'node:os';
 import { join, relative, resolve } from 'node:path';
 import { test } from 'node:test';
 import {
@@ -33,14 +30,12 @@ import {
   buildWorkspace,
   danglingLinks,
   independentSha,
-  installer,
   isLink,
   layerNamed,
   lockPath,
   mustApply,
   ownedRecord,
   plainOutput,
-  psShell,
   problemRows,
   python,
   readJson,
@@ -50,8 +45,6 @@ import {
   runStatus,
   seedUserFiles,
   settingsPath,
-  shell,
-  skip,
   snapshotTree,
   statusRows,
   verifyManifestsScript,
@@ -182,7 +175,7 @@ withWorkspace(
     seedPiPackage(ctx);
     const { env, argsLog } = fakePiNpm(ctx);
     const before = snapshotTree(ctx.workspace);
-    const audit = runInstaller(shell, ctx, ['-UpdatePi'], {
+    const audit = runInstaller(ctx, ['-UpdatePi'], {
       apply: false,
       env,
       layersFile: null,
@@ -207,7 +200,7 @@ withWorkspace(
     seedPiPackage(ctx);
     const { env, argsLog } = fakePiNpm(ctx);
     const before = snapshotTree(ctx.workspace);
-    const applied = runInstaller(shell, ctx, ['-UpdatePi', '-PiVersion', '1.1.5'], {
+    const applied = runInstaller(ctx, ['-UpdatePi', '-PiVersion', '1.1.5'], {
       env,
       layersFile: null,
       includeRuntimeCommands: false,
@@ -240,7 +233,7 @@ withWorkspace(
 withWorkspace(
   'Pi update refuses a missing package and invalid option combinations',
   (ctx) => {
-    const missing = runInstaller(shell, ctx, ['-UpdatePi'], {
+    const missing = runInstaller(ctx, ['-UpdatePi'], {
       apply: false,
       layersFile: null,
       includeRuntimeCommands: false,
@@ -260,7 +253,7 @@ withWorkspace(
       join(wrong, 'package.json'),
       JSON.stringify({ name: 'other-package', version: '1.0.0' }),
     );
-    const mismatch = runInstaller(shell, ctx, ['-UpdatePi'], {
+    const mismatch = runInstaller(ctx, ['-UpdatePi'], {
       apply: false,
       layersFile: null,
       includeRuntimeCommands: false,
@@ -273,7 +266,7 @@ withWorkspace(
       ['-UpdatePi', '-Update'],
       ['-PiVersion', '1.0.0'],
     ]) {
-      const invalid = runInstaller(shell, ctx, args, {
+      const invalid = runInstaller(ctx, args, {
         apply: false,
         layersFile: null,
         includeRuntimeCommands: false,
@@ -552,7 +545,7 @@ withWorkspace(
         : '#!/bin/sh\necho external\n',
     );
     if (process.platform !== 'win32') chmodSync(external, 0o755);
-    const run = runInstaller(shell, ctx, ['-PiCommand', external], { env });
+    const run = runInstaller(ctx, ['-PiCommand', external], { env });
     assertOk(run, 'external Pi apply failed');
     const cmdPath = join(ctx.workspace, '.maxstack', 'bin', 'pi.cmd');
     const shPath = join(ctx.workspace, '.maxstack', 'bin', 'pi.sh');
@@ -608,7 +601,7 @@ if (process.platform === 'win32') {
       const helper = join(ctx.workspace, '.maxstack', 'bin', 'pi-self-update.mjs');
       rmSync(localPi);
       rmSync(helper);
-      const apply = runInstaller(shell, ctx, ['-PiCommand', MISSING_PI]);
+      const apply = runInstaller(ctx, ['-PiCommand', MISSING_PI]);
       assert.equal(apply.status, 1, plainOutput(apply));
       assert.match(plainOutput(apply), /helper .* is missing or changed/);
       assert.match(plainOutput(apply), /status and uninstall can still report it/);
@@ -636,7 +629,7 @@ if (process.platform === 'win32') {
       appendFileSync(helper, '\n// locally modified\n');
       const changed = readFileSync(helper, 'utf8');
       rmSync(localPi);
-      const apply = runInstaller(shell, ctx, ['-PiCommand', MISSING_PI]);
+      const apply = runInstaller(ctx, ['-PiCommand', MISSING_PI]);
       assert.equal(apply.status, 1, plainOutput(apply));
       assert.match(plainOutput(apply), /helper .* is missing or changed/);
       assert.equal(readFileSync(helper, 'utf8'), changed, 'apply overwrote a modified helper');
@@ -664,7 +657,7 @@ if (process.platform === 'win32') {
       const external = join(ctx.base, 'external-pi.cmd');
       writeFileSync(external, '@echo off\r\necho external\r\n');
       rmSync(localPi);
-      const transitioned = runInstaller(shell, ctx, ['-PiCommand', external]);
+      const transitioned = runInstaller(ctx, ['-PiCommand', external]);
       assert.equal(transitioned.status, 0, plainOutput(transitioned));
       assert.match(plainOutput(transitioned), /Removed the stale wrapper .*pi-self-update\.mjs/);
       assert.equal(existsSync(helper), false, 'unchanged owned helper remained after transition');
@@ -688,7 +681,7 @@ if (process.platform === 'win32') {
       const external = join(ctx.base, 'external-pi.cmd');
       writeFileSync(external, '@echo off\r\necho external\r\n');
       rmSync(localPi);
-      const transitioned = runInstaller(shell, ctx, ['-PiCommand', external]);
+      const transitioned = runInstaller(ctx, ['-PiCommand', external]);
       assert.equal(transitioned.status, 0, plainOutput(transitioned));
       assert.match(
         plainOutput(transitioned),
@@ -948,7 +941,7 @@ withWorkspace(
     const commaWorkspace = join(ctx.base, 'comma,workspace');
     renameSync(ctx.workspace, commaWorkspace);
     ctx.workspace = commaWorkspace;
-    const run = runInstaller(shell, ctx, ['-Runtimes', 'claude,copilot'], {
+    const run = runInstaller(ctx, ['-Runtimes', 'claude,copilot'], {
       layersFile: writeLayers(ctx),
       includeRuntimeCommands: false,
     });
@@ -974,7 +967,7 @@ withWorkspace(
     const unsafeWorkspace = join(ctx.base, 'bang!workspace');
     renameSync(ctx.workspace, unsafeWorkspace);
     ctx.workspace = unsafeWorkspace;
-    const run = runInstaller(shell, ctx, ['-Runtimes', 'claude,copilot'], {
+    const run = runInstaller(ctx, ['-Runtimes', 'claude,copilot'], {
       layersFile: writeLayers(ctx),
       includeRuntimeCommands: false,
     });
@@ -1071,7 +1064,7 @@ withWorkspace(
     assert.equal(second.copilot[copilotKey], first.copilot[copilotKey]);
     assert.ok(isLink(join(ctx.workspace, '.claude', 'plugins', 'org-ai-plugin')));
 
-    const audit = runInstaller(shell, ctx, [], { apply: false });
+    const audit = runInstaller(ctx, [], { apply: false });
     assert.equal(audit.status, 0, audit.stderr);
     const drift = driftLines(audit);
     // config, three Claude children, three OpenCode folders, the Copilot and Pi wrappers, and the
@@ -1088,7 +1081,7 @@ withWorkspace(
 withWorkspace(
   'a claude runtime without a manifest fails with a clear error',
   (ctx) => {
-    const run = runInstaller(shell, ctx);
+    const run = runInstaller(ctx);
     assert.notEqual(run.status, 0, 'the installer accepted a claude runtime with no manifest');
     assert.match(plainOutput(run), /claude runtime but no \.claude-plugin/);
   },
@@ -1103,7 +1096,7 @@ withWorkspace(
       '.claude-plugin/plugin.json',
       JSON.stringify({ name: 'renamed' }),
     );
-    const run = runInstaller(shell, ctx);
+    const run = runInstaller(ctx);
     assert.notEqual(run.status, 0);
     assert.match(
       plainOutput(run),
@@ -1119,7 +1112,7 @@ withWorkspace(
     const layers = writeLayers(ctx, (manifest) => {
       layerNamed(manifest, 'personal-ai-plugin').runtimes = { opencode: {}, copilot: {} };
     });
-    const run = runInstaller(shell, ctx, [], { layersFile: layers });
+    const run = runInstaller(ctx, [], { layersFile: layers });
     assert.notEqual(run.status, 0, 'the installer accepted copilot without claude');
     assert.match(
       plainOutput(run),
@@ -1133,8 +1126,11 @@ withWorkspace(
   'the installer has no live-server check and no skip switch',
   (ctx) => {
     // The installer has no live-server check; T3 can reuse a long-lived server.
-    assert.doesNotMatch(readFileSync(installer, 'utf8'), /openchamber|SkipLiveServerCheck/i);
-    const run = runInstaller(shell, ctx, ['-SkipLiveServerCheck'], { apply: false });
+    assert.doesNotMatch(
+      readFileSync(join(repoRoot, 'scripts', 'install', 'workspace.ts'), 'utf8'),
+      /openchamber|SkipLiveServerCheck/i,
+    );
+    const run = runInstaller(ctx, ['-SkipLiveServerCheck'], { apply: false });
     assert.notEqual(
       run.status,
       0,
@@ -1152,7 +1148,7 @@ withWorkspace(
     const handMade = join(ctx.workspace, '.opencode', 'plugins', 'hand-made');
     writeFile(handMade, 'notes.txt', 'not the installer\n');
 
-    const audit = runInstaller(shell, ctx, [], { apply: false });
+    const audit = runInstaller(ctx, [], { apply: false });
     assert.equal(audit.status, 0, audit.stderr);
     assert.match(audit.stdout, /Drift: +.*plugins[\\/]hand-made: stale/, audit.stdout);
 
@@ -1237,29 +1233,22 @@ withWindowsWorkspace(
 // pi.sh puts the agent folder inside double quotes, so a dollar sign or a backtick in the baked
 // path would change what the shell runs. The cmd wrapper keeps both as plain text, so the run
 // stops only on the shell side. Windows allows both characters in a folder name.
-test(
-  'a workspace path that pi.sh cannot quote stops the run before anything is written',
-  { skip },
-  () => {
-    for (const name of ['sim$pson', 'sim`pson']) {
-      const ctx = buildWorkspace();
-      try {
-        const renamed = join(ctx.base, name);
-        renameSync(ctx.workspace, renamed);
-        ctx.workspace = renamed;
-        const run = runInstaller(shell, ctx);
-        assert.notEqual(run.status, 0, `the installer accepted the workspace path ${name}`);
-        assert.match(plainOutput(run), /the Pi shell wrapper cannot quote/, run.stdout);
-        assert.ok(
-          !existsSync(join(ctx.workspace, '.maxstack', 'bin', 'pi.sh')),
-          'pi.sh was written',
-        );
-      } finally {
-        rmSync(ctx.base, { recursive: true, force: true });
-      }
+test('a workspace path that pi.sh cannot quote stops the run before anything is written', () => {
+  for (const name of ['sim$pson', 'sim`pson']) {
+    const ctx = buildWorkspace();
+    try {
+      const renamed = join(ctx.base, name);
+      renameSync(ctx.workspace, renamed);
+      ctx.workspace = renamed;
+      const run = runInstaller(ctx);
+      assert.notEqual(run.status, 0, `the installer accepted the workspace path ${name}`);
+      assert.match(plainOutput(run), /the Pi shell wrapper cannot quote/, run.stdout);
+      assert.ok(!existsSync(join(ctx.workspace, '.maxstack', 'bin', 'pi.sh')), 'pi.sh was written');
+    } finally {
+      rmSync(ctx.base, { recursive: true, force: true });
     }
-  },
-);
+  }
+});
 
 withWorkspaceNeeding(
   'bash',
@@ -1452,7 +1441,7 @@ withWorkspace(
       claudePlugin: 'org-ai-plugin',
       pi: { extensions: ['./pi/missing.ts'] },
     });
-    const run = runInstaller(shell, ctx);
+    const run = runInstaller(ctx);
     assert.notEqual(run.status, 0, 'the installer accepted a pi key that names a missing file');
     assert.match(
       plainOutput(run),
@@ -1486,12 +1475,7 @@ withWorkspace(
 withWorkspace(
   'finding F6: a skipped selected Pi wrapper is summarized and strict apply fails',
   (ctx) => {
-    const run = runInstaller(shell, ctx, [
-      '-PiCommand',
-      MISSING_PI,
-      '-CopilotCommand',
-      MISSING_COPILOT,
-    ]);
+    const run = runInstaller(ctx, ['-PiCommand', MISSING_PI, '-CopilotCommand', MISSING_COPILOT]);
     assert.equal(run.status, 0, plainOutput(run));
     assert.match(run.stdout, /INCOMPLETE: selected runtime wrappers were skipped:/);
     const expectedPi =
@@ -1504,7 +1488,7 @@ withWorkspace(
         : /copilot: \.maxstack\/bin\/copilot\.sh/;
     assert.match(run.stdout, expectedPi);
     assert.match(run.stdout, expectedCopilot);
-    const strict = runInstaller(shell, ctx, [
+    const strict = runInstaller(ctx, [
       '-PiCommand',
       MISSING_PI,
       '-CopilotCommand',
@@ -1524,117 +1508,109 @@ function writeLocalPi(ctx) {
   return writeFakeCli(join(ctx.workspace, ...LOCAL_PI_BIN), 'pi');
 }
 
-test(
-  'a Pi installed under the workspace is found with none on PATH, and its wrappers survive a run without it',
-  { skip },
-  async (t) => {
-    await t.test('(a) apply writes the wrappers pointing at the workspace-local Pi', () =>
-      withFreshWorkspace((ctx) => {
-        const stub = writeLocalPi(ctx);
-        const run = mustApply(ctx, ['-PiCommand', MISSING_PI]);
-        assert.doesNotMatch(plainOutput(run), /Pi CLI not found/, run.stdout);
-        if (process.platform === 'win32') {
-          assert.ok(
-            wrapperText(ctx, 'pi.cmd').includes(`set "PI_BIN=${stub}"`),
-            'pi.cmd does not name the workspace-local Pi',
-          );
-        }
+test('a Pi installed under the workspace is found with none on PATH, and its wrappers survive a run without it', async (t) => {
+  await t.test('(a) apply writes the wrappers pointing at the workspace-local Pi', () =>
+    withFreshWorkspace((ctx) => {
+      const stub = writeLocalPi(ctx);
+      const run = mustApply(ctx, ['-PiCommand', MISSING_PI]);
+      assert.doesNotMatch(plainOutput(run), /Pi CLI not found/, run.stdout);
+      if (process.platform === 'win32') {
         assert.ok(
-          wrapperText(ctx, 'pi.sh').includes(stub.replaceAll('\\', '/')),
-          'pi.sh does not name the workspace-local Pi',
+          wrapperText(ctx, 'pi.cmd').includes(`set "PI_BIN=${stub}"`),
+          'pi.cmd does not name the workspace-local Pi',
         );
-      }),
-    );
+      }
+      assert.ok(
+        wrapperText(ctx, 'pi.sh').includes(stub.replaceAll('\\', '/')),
+        'pi.sh does not name the workspace-local Pi',
+      );
+    }),
+  );
 
-    await t.test('(b) a second apply changes no wrapper and no lock entry', () =>
-      withFreshWorkspace((ctx) => {
-        writeLocalPi(ctx);
-        mustApply(ctx, ['-PiCommand', MISSING_PI]);
-        const read = () => ({
-          cmd: process.platform === 'win32' ? wrapperText(ctx, 'pi.cmd') : null,
-          sh: wrapperText(ctx, 'pi.sh'),
-          lock: withoutTimestamp(readJson(lockPath(ctx))),
-        });
-        const before = read();
-        const run = mustApply(ctx, ['-PiCommand', MISSING_PI]);
-        assert.doesNotMatch(
-          plainOutput(run),
-          /Removed the stale wrapper|Kept .*pi\.cmd/,
-          run.stdout,
-        );
-        assert.deepEqual(read(), before);
-      }),
-    );
+  await t.test('(b) a second apply changes no wrapper and no lock entry', () =>
+    withFreshWorkspace((ctx) => {
+      writeLocalPi(ctx);
+      mustApply(ctx, ['-PiCommand', MISSING_PI]);
+      const read = () => ({
+        cmd: process.platform === 'win32' ? wrapperText(ctx, 'pi.cmd') : null,
+        sh: wrapperText(ctx, 'pi.sh'),
+        lock: withoutTimestamp(readJson(lockPath(ctx))),
+      });
+      const before = read();
+      const run = mustApply(ctx, ['-PiCommand', MISSING_PI]);
+      assert.doesNotMatch(plainOutput(run), /Removed the stale wrapper|Kept .*pi\.cmd/, run.stdout);
+      assert.deepEqual(read(), before);
+    }),
+  );
 
-    await t.test('(c) with the Pi CLI gone, apply warns and keeps the recorded wrappers', () =>
-      withFreshWorkspace((ctx) => {
-        const stub = writeLocalPi(ctx);
-        mustApply(ctx, ['-PiCommand', MISSING_PI]);
-        const before = {
-          cmd: process.platform === 'win32' ? wrapperText(ctx, 'pi.cmd') : null,
-          sh: wrapperText(ctx, 'pi.sh'),
-        };
-        rmSync(stub);
-        const run = mustApply(ctx, ['-PiCommand', MISSING_PI]);
-        assert.match(plainOutput(run), /Pi CLI not found/, run.stdout);
-        assert.match(plainOutput(run), /Kept .*pi\.sh.*because Pi was not found/, run.stdout);
-        if (process.platform === 'win32') {
-          assert.equal(wrapperText(ctx, 'pi.cmd'), before.cmd, 'the Pi wrapper changed');
-          const lock = readJson(lockPath(ctx));
-          assert.ok(
-            ownedRecord(lock, '.maxstack/bin/pi.cmd', 'file'),
-            'the lock dropped the Pi wrapper it recorded',
-          );
-        }
-        assert.equal(wrapperText(ctx, 'pi.sh'), before.sh, 'the Pi script changed');
+  await t.test('(c) with the Pi CLI gone, apply warns and keeps the recorded wrappers', () =>
+    withFreshWorkspace((ctx) => {
+      const stub = writeLocalPi(ctx);
+      mustApply(ctx, ['-PiCommand', MISSING_PI]);
+      const before = {
+        cmd: process.platform === 'win32' ? wrapperText(ctx, 'pi.cmd') : null,
+        sh: wrapperText(ctx, 'pi.sh'),
+      };
+      rmSync(stub);
+      const run = mustApply(ctx, ['-PiCommand', MISSING_PI]);
+      assert.match(plainOutput(run), /Pi CLI not found/, run.stdout);
+      assert.match(plainOutput(run), /Kept .*pi\.sh.*because Pi was not found/, run.stdout);
+      if (process.platform === 'win32') {
+        assert.equal(wrapperText(ctx, 'pi.cmd'), before.cmd, 'the Pi wrapper changed');
         const lock = readJson(lockPath(ctx));
         assert.ok(
-          ownedRecord(lock, '.maxstack/bin/pi.sh', 'file'),
-          'the lock dropped the Pi script it recorded',
+          ownedRecord(lock, '.maxstack/bin/pi.cmd', 'file'),
+          'the lock dropped the Pi wrapper it recorded',
         );
-        if (process.platform === 'win32') {
-          assert.ok(
-            ownedRecord(lock, '.maxstack/bin/pi-self-update.mjs', 'file'),
-            'the lock dropped the updater helper it recorded',
+      }
+      assert.equal(wrapperText(ctx, 'pi.sh'), before.sh, 'the Pi script changed');
+      const lock = readJson(lockPath(ctx));
+      assert.ok(
+        ownedRecord(lock, '.maxstack/bin/pi.sh', 'file'),
+        'the lock dropped the Pi script it recorded',
+      );
+      if (process.platform === 'win32') {
+        assert.ok(
+          ownedRecord(lock, '.maxstack/bin/pi-self-update.mjs', 'file'),
+          'the lock dropped the updater helper it recorded',
+        );
+      }
+    }),
+  );
+
+  await t.test('(d) status reports the kept wrappers as matching', () =>
+    withFreshWorkspace((ctx) => {
+      const stub = writeLocalPi(ctx);
+      mustApply(ctx, ['-PiCommand', MISSING_PI]);
+      const withStub = statusRows(runStatus(ctx, ['-PiCommand', MISSING_PI]));
+      rmSync(stub);
+      mustApply(ctx, ['-PiCommand', MISSING_PI]);
+      const run = runStatus(ctx, ['-PiCommand', MISSING_PI]);
+      assert.equal(run.status, 0, run.stderr);
+      for (const rows of [withStub, statusRows(run)]) {
+        const wrappers =
+          process.platform === 'win32'
+            ? ['.maxstack/bin/pi.cmd', '.maxstack/bin/pi.sh']
+            : ['.maxstack/bin/pi.sh'];
+        for (const name of wrappers) {
+          assert.deepEqual(
+            rows.find((row) => row.label === name),
+            { state: 'matching', label: name },
+            `${name} is not reported as matching`,
           );
         }
-      }),
-    );
-
-    await t.test('(d) status reports the kept wrappers as matching', () =>
-      withFreshWorkspace((ctx) => {
-        const stub = writeLocalPi(ctx);
-        mustApply(ctx, ['-PiCommand', MISSING_PI]);
-        const withStub = statusRows(runStatus(ctx, ['-PiCommand', MISSING_PI]));
-        rmSync(stub);
-        mustApply(ctx, ['-PiCommand', MISSING_PI]);
-        const run = runStatus(ctx, ['-PiCommand', MISSING_PI]);
-        assert.equal(run.status, 0, run.stderr);
-        for (const rows of [withStub, statusRows(run)]) {
-          const wrappers =
-            process.platform === 'win32'
-              ? ['.maxstack/bin/pi.cmd', '.maxstack/bin/pi.sh']
-              : ['.maxstack/bin/pi.sh'];
-          for (const name of wrappers) {
-            assert.deepEqual(
-              rows.find((row) => row.label === name),
-              { state: 'matching', label: name },
-              `${name} is not reported as matching`,
-            );
-          }
-          if (process.platform === 'win32') {
-            const helper = '.maxstack/bin/pi-self-update.mjs';
-            assert.deepEqual(
-              rows.find((row) => row.label === helper),
-              { state: 'matching', label: helper },
-              `${helper} is not reported as matching`,
-            );
-          }
+        if (process.platform === 'win32') {
+          const helper = '.maxstack/bin/pi-self-update.mjs';
+          assert.deepEqual(
+            rows.find((row) => row.label === helper),
+            { state: 'matching', label: helper },
+            `${helper} is not reported as matching`,
+          );
         }
-      }),
-    );
-  },
-);
+      }
+    }),
+  );
+});
 
 withWorkspaceNeeding(
   'python',
@@ -1664,7 +1640,10 @@ withWorkspaceNeeding(
       { windowsHide: true, encoding: 'utf8', env },
     );
     assert.notEqual(run.status, 0, 'the verifier passed with the Pi CLI on PATH and no Pi wrapper');
-    assert.match(plainOutput(run), /the pi CLI is on PATH.*rerun Install-Workspace\.ps1 -Apply/);
+    assert.match(
+      plainOutput(run),
+      /the pi CLI is on PATH.*rerun bun scripts\/install\/main\.ts -Apply/,
+    );
   },
   {},
 );
@@ -1690,7 +1669,7 @@ withWorkspaceNeeding(
     );
     assert.match(
       plainOutput(run),
-      /the pi CLI is installed under .*rerun Install-Workspace\.ps1 -Apply/,
+      /the pi CLI is installed under .*rerun bun scripts\/install\/main\.ts -Apply/,
     );
   },
   {},
@@ -1700,7 +1679,6 @@ withWorkspaceNeeding(
 // Windows has no mode bits to check, so only those assertions are skipped there.
 test(
   'the shell wrappers are executable off Windows, and the verifier checks the bit',
-  { skip },
   async (t) => {
     const posix = process.platform !== 'win32';
     const ctx = buildWorkspace();
@@ -1767,210 +1745,6 @@ test(
       rmSync(ctx.base, { recursive: true, force: true });
     }
   },
-);
-
-// The wrapper target filter, called with each platform as a parameter, so the macOS cases run
-// on Windows too. The harness takes the function's text from the installer's own parse tree.
-const WRAPPER_TARGET_CASES = [
-  ['/opt/homebrew/bin/pi', false, true],
-  ['/usr/local/bin/copilot', false, true],
-  ['/opt/homebrew/bin/pi.ps1', false, false],
-  ['/opt/homebrew/bin/pi.cmd', false, false],
-  ['C:\\tools\\pi.exe', true, true],
-  ['C:\\tools\\pi.cmd', true, true],
-  ['C:\\tools\\pi.bat', true, true],
-  ['C:\\tools\\pi.ps1', true, false],
-  ['/opt/homebrew/bin/pi', true, false],
-];
-
-function wrapperTargetHarness(cases) {
-  const rows = cases
-    .map(
-      ([path, windows]) =>
-        `  [pscustomobject]@{ path = '${path.replaceAll("'", "''")}'; windows = ${windows ? '$true' : '$false'} }`,
-    )
-    .join(',\n');
-  return `param([string] $Installer)
-. (Join-Path (Split-Path -Parent $Installer) 'Install-Ordinal.ps1')
-$tokens = $null
-$errors = $null
-$ast = [System.Management.Automation.Language.Parser]::ParseFile($Installer, [ref] $tokens, [ref] $errors)
-$definition = $ast.FindAll({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Test-WrapperTarget' }, $true) | Select-Object -First 1
-if (-not $definition) { throw 'Test-WrapperTarget is not defined in the installer' }
-Invoke-Expression $definition.Extent.Text
-$cases = @(
-${rows}
-)
-$results = foreach ($case in $cases) {
-  [pscustomobject]@{ path = $case.path; windows = $case.windows; accepted = [bool] (Test-WrapperTarget -Path $case.path -Windows $case.windows) }
-}
-ConvertTo-Json -InputObject @($results) -Depth 3 -Compress
-`;
-}
-
-test(
-  'a wrapper takes an extensionless CLI off Windows, and refuses PowerShell and cmd shims on each platform',
-  { skip },
-  () => {
-    const dir = mkdtempSync(join(tmpdir(), 'maxstack-target-'));
-    try {
-      const harness = join(dir, 'harness.ps1');
-      writeFileSync(harness, wrapperTargetHarness(WRAPPER_TARGET_CASES));
-      const run = spawnSync(
-        psShell,
-        ['-NoProfile', '-NonInteractive', '-File', harness, installer],
-        {
-          windowsHide: true,
-          encoding: 'utf8',
-        },
-      );
-      assert.equal(run.status, 0, `${run.stdout}\n${run.stderr}`);
-      const results = JSON.parse(run.stdout);
-      for (const [path, windows, accepted] of WRAPPER_TARGET_CASES) {
-        const row = results.find((result) => result.path === path && result.windows === windows);
-        assert.equal(
-          row?.accepted,
-          accepted,
-          `${path} on ${windows ? 'Windows' : 'macOS or Linux'}`,
-        );
-      }
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  },
-);
-
-withWorkspaceNeeding(
-  'python on Windows',
-  process.platform === 'win32' ? python : null,
-  'the workspace verifier passes after an apply and flags a hand-edited Copilot wrapper',
-  (ctx) => {
-    mustApply(ctx);
-    const home = join(ctx.base, 'home');
-    mkdirSync(home);
-    const verify = () =>
-      spawnSync(
-        python,
-        [
-          join(repoRoot, 'scripts', 'verify-workspace-install.py'),
-          '--workspace',
-          ctx.workspace,
-          '--home',
-          home,
-        ],
-        { windowsHide: true, encoding: 'utf8' },
-      );
-
-    const passed = verify();
-    assert.equal(passed.status, 0, `${passed.stdout}\n${passed.stderr}`);
-    assert.match(passed.stdout, /PASS: workspace bundle present/);
-
-    const cmd = join(ctx.workspace, '.maxstack', 'bin', 'copilot.cmd');
-    appendFileSync(cmd, 'rem hand edit\r\n');
-    const edited = verify();
-    assert.notEqual(edited.status, 0, 'the verifier accepted an edited wrapper');
-    assert.match(
-      plainOutput(edited),
-      /copilot\.cmd differs from the text recorded in stack\.lock\.json/,
-    );
-  },
-  {},
-);
-
-// The hash check passes here, because the lock is updated to the edited script. What remains
-// is the folder the script names, which the verifier must compare to the workspace's.
-withWorkspaceNeeding(
-  'python on Windows',
-  process.platform === 'win32' ? python : null,
-  'the verifier compares the agent folder in pi.sh with the workspace, not just its presence',
-  (ctx) => {
-    mustApply(ctx);
-    const home = join(ctx.base, 'home');
-    mkdirSync(home);
-    const verify = () =>
-      spawnSync(
-        python,
-        [
-          join(repoRoot, 'scripts', 'verify-workspace-install.py'),
-          '--workspace',
-          ctx.workspace,
-          '--home',
-          home,
-        ],
-        { windowsHide: true, encoding: 'utf8' },
-      );
-    const shPath = join(ctx.workspace, '.maxstack', 'bin', 'pi.sh');
-    const lockPath = join(ctx.workspace, 'stack.lock.json');
-
-    const text = readFileSync(shPath, 'utf8');
-    const tampered = text.replace(
-      /^export PI_CODING_AGENT_DIR=".*"$/m,
-      'export PI_CODING_AGENT_DIR="/tmp/elsewhere/.pi/agent"',
-    );
-    assert.notEqual(tampered, text, 'the test did not change the agent folder line');
-    writeFileSync(shPath, tampered);
-    const lock = readJson(lockPath);
-    lock.pi.shSha256 = createHash('sha256').update(tampered).digest('hex').toUpperCase();
-    writeFileSync(lockPath, JSON.stringify(lock));
-
-    const wrong = verify();
-    assert.notEqual(
-      wrong.status,
-      0,
-      'the verifier accepted a pi.sh that names another agent folder',
-    );
-    assert.match(plainOutput(wrong), /pi\.sh does not set PI_CODING_AGENT_DIR to /);
-
-    mustApply(ctx);
-    assert.equal(verify().status, 0);
-  },
-  {},
-);
-
-withWorkspaceNeeding(
-  'python on Windows',
-  process.platform === 'win32' ? python : null,
-  'the workspace verifier checks each owned path against the disk and refuses a malformed record',
-  (ctx) => {
-    mustApply(ctx);
-    const home = join(ctx.base, 'home');
-    mkdirSync(home);
-    const verify = () =>
-      spawnSync(python, [verifyWorkspaceScript, '--workspace', ctx.workspace, '--home', home], {
-        windowsHide: true,
-        encoding: 'utf8',
-      });
-    assert.equal(verify().status, 0, 'the verifier refused a fresh apply');
-
-    const lock = readJson(lockPath(ctx));
-    lock.owned.find((record) => record.path === '.opencode/agents/pstack-reviewer.md').sha256 =
-      'F'.repeat(64);
-    writeFileSync(lockPath(ctx), JSON.stringify(lock));
-    const drifted = verify();
-    assert.notEqual(
-      drifted.status,
-      0,
-      'the verifier accepted a file that differs from its owned hash',
-    );
-    assert.match(plainOutput(drifted), /owned file .*pstack-reviewer\.md differs/);
-
-    mustApply(ctx);
-    const malformed = readJson(lockPath(ctx));
-    malformed.owned[0].path = 'opencode\\jsonc';
-    writeFileSync(lockPath(ctx), JSON.stringify(malformed));
-    const badPath = verify();
-    assert.notEqual(badPath.status, 0, 'the verifier accepted a backslash path');
-    assert.match(
-      plainOutput(badPath),
-      /path must be a workspace-relative path with forward slashes/,
-    );
-
-    mustApply(ctx);
-    const unowned = readJson(lockPath(ctx));
-    delete unowned.owned;
-    writeFileSync(lockPath(ctx), JSON.stringify(unowned));
-    assert.match(plainOutput(verify()), /has no owned list; rerun Install-Workspace\.ps1 -Apply/);
-  },
   {},
 );
 
@@ -2032,7 +1806,7 @@ withWorkspace(
       delete legacy[field];
     writeFileSync(lockPath(ctx), JSON.stringify(legacy));
 
-    const audit = runInstaller(shell, ctx, [], { apply: false });
+    const audit = runInstaller(ctx, [], { apply: false });
     assert.equal(audit.status, 0, audit.stderr);
     const drift = driftLines(audit);
     assert.equal(drift.length, 12, audit.stdout);
@@ -2108,14 +1882,14 @@ withWorkspace(
 withWorkspace(
   'copilot or pi without claude fails, both when it is named and when it is already recorded',
   (ctx) => {
-    const named = runInstaller(shell, ctx, ['-Runtimes', 'pi']);
+    const named = runInstaller(ctx, ['-Runtimes', 'pi']);
     assert.notEqual(named.status, 0, 'pi was selected without claude');
     assert.match(
       plainOutput(named),
       /Runtime 'pi' needs claude: its wrapper or settings name the Claude plugin folders/,
     );
     assert.match(
-      plainOutput(runInstaller(shell, ctx, ['-Runtimes', 'copilot'])),
+      plainOutput(runInstaller(ctx, ['-Runtimes', 'copilot'])),
       /Runtime 'copilot' needs claude/,
     );
 
@@ -2123,7 +1897,7 @@ withWorkspace(
     const lock = readJson(lockPath(ctx));
     lock.selection.runtimes = ['pi'];
     writeFileSync(lockPath(ctx), JSON.stringify(lock));
-    const recorded = runInstaller(shell, ctx);
+    const recorded = runInstaller(ctx);
     assert.notEqual(recorded.status, 0, 'a recorded pi without claude was accepted');
     assert.match(plainOutput(recorded), /Runtime 'pi' needs claude/);
   },
@@ -2230,7 +2004,7 @@ withWorkspace(
     const toClaude = join(ctx.base, 'to-claude');
     mkdirSync(join(ctx.workspace, '.claude'), { recursive: true });
     symlinkSync(join(ctx.workspace, '.claude'), toClaude, 'junction');
-    const viaJunction = runInstaller(shell, ctx, ['-Source', `org-ai-plugin=local:${toClaude}`], {
+    const viaJunction = runInstaller(ctx, ['-Source', `org-ai-plugin=local:${toClaude}`], {
       apply: false,
     });
     assert.notEqual(viaJunction.status, 0, 'a junction into .claude was accepted');

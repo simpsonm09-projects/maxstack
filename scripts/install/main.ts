@@ -1,5 +1,5 @@
 // The command line for the TypeScript workspace installer. It reads the same flags as
-// scripts/Install-Workspace.ps1, accepting both the PowerShell single-dash spelling and the double-dash form, and
+// scripts/install/main.ts, accepting both the single-dash spelling and the double-dash form, and
 // hands them to runWorkspaceInstaller. Bun runs this file: `bun scripts/install/main.ts -Apply`.
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';

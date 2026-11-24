@@ -9,7 +9,6 @@ import {
   readJson,
   runInstaller,
   runStatus,
-  shell,
   windowsOnly,
   withWorkspace,
   writeWorkspaceSettings,
@@ -22,7 +21,7 @@ const readOnlySettings = (gatedInstances = [], readOnlyInstances = ids) => ({
   version: 1,
   t3: { gatedInstances, readOnlyInstances },
 });
-const install = (ctx, extra = [], options = {}) => runInstaller(shell, ctx, extra, options);
+const install = (ctx, extra = [], options = {}) => runInstaller(ctx, extra, options);
 
 function addHooks(ctx) {
   const hooks = join(ctx.workspace, 'projects', 'repos', 'org-ai-plugin', 'hooks');

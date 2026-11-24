@@ -93,17 +93,6 @@ for (const runtime of ['claude', 'copilot', 'opencode', 'pi']) {
   );
 }
 
-function findPowerShell() {
-  for (const command of ['pwsh', 'powershell']) {
-    const probe = spawnSync(command, ['-NoProfile', '-Command', 'exit 0'], {
-      windowsHide: true,
-      encoding: 'utf8',
-    });
-    if (probe.status === 0) return command;
-  }
-  return null;
-}
-
 function manifestLayer(root, name) {
   const source = join(root, name);
   write(source, '.claude-plugin/plugin.json', JSON.stringify({ name }));
@@ -121,9 +110,8 @@ function manifestLayer(root, name) {
 // assets must be the same bytes the generator copies, which is the byte audit's installer half.
 test(
   'the installer overlay of the real layers copies the same bytes the generator copies',
-  { skip: skip || (findPowerShell() ? false : 'PowerShell is not available') },
+  { skip },
   () => {
-    const shell = findPowerShell();
     withTemp((temp) => {
       const workspace = join(temp, 'workspace');
       mkdirSync(workspace);
@@ -152,12 +140,9 @@ test(
       writeFileSync(fakePi, '@echo off\r\nexit /b 0\r\n');
       const layerSource = stubs.map(({ name, stub }) => `${name}=${stub}`).join(',');
       const installed = spawnSync(
-        shell,
+        process.execPath,
         [
-          '-NoProfile',
-          '-NonInteractive',
-          '-File',
-          join(repoRoot, 'scripts', 'Install-Workspace.ps1'),
+          join(repoRoot, 'scripts', 'install', 'main.ts'),
           '-Workspace',
           workspace,
           '-LayersFile',

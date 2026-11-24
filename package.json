@@ -4,6 +4,6 @@
   "type": "module",
   "scripts": {
     "test": "bun test",
-    "test:install": "bun test scripts/Install-Workspace.*.test.mjs scripts/T3Settings.test.mjs"
+    "test:install": "bun test scripts/Install-Workspace.*.test.mjs scripts/Install-WorkspaceDiscovery.test.mjs scripts/Install-Codex.test.mjs"
   }
 }

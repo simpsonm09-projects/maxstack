@@ -1,7 +1,7 @@
-"""The settings document reader: the rules of scripts/Install-Settings.ps1 (Read-MaxstackSettings), in Python.
+"""The settings document reader: the rules of readMaxstackSettings in scripts/install/settings.ts, in Python.
 
 A file the installer accepts is accepted here and the reverse. scripts/verify_settings.py runs the schema and seed checks
-and the `--document` command that the differential test uses. A name or value that holds a control, a format character, a
+and the `--document` command. A name or value that holds a control, a format character, a
 line or paragraph separator, or an unpaired surrogate is refused, as the installer refuses it, and every name in a message
 is shown with those characters escaped as \\uXXXX.
 """

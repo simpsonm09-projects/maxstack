@@ -125,7 +125,7 @@ def load_lock(workspace: pathlib.Path, failures: list[str]) -> dict | None:
         any(runtime not in layer for runtime in RUNTIMES) for layer in layers
     ):
         failures.append(
-            f"{lock_path} predates the runtime records; rerun Install-Workspace.ps1 -Apply"
+            f"{lock_path} predates the runtime records; rerun bun scripts/install/main.ts -Apply"
         )
         return None
     return lock
@@ -200,7 +200,7 @@ def check_opencode(lock: dict, workspace: pathlib.Path, failures: list[str]) -> 
     for key in ("model", "small_model"):
         if key in config:
             failures.append(
-                f"{config_path} sets {key}; maxstack sets no model. Rerun Install-Workspace.ps1 -Apply"
+                f"{config_path} sets {key}; maxstack sets no model. Rerun bun scripts/install/main.ts -Apply"
             )
 
     recorded = set()
@@ -233,7 +233,7 @@ def check_opencode(lock: dict, workspace: pathlib.Path, failures: list[str]) -> 
                 r"(?m)^model:", frontmatter(profile.read_text(encoding="utf-8"))
             ):
                 failures.append(
-                    f"agent profile {profile} sets a model; Install-Workspace.ps1 -Apply removes it"
+                    f"agent profile {profile} sets a model; bun scripts/install/main.ts -Apply removes it"
                 )
 
     if sorted(configured) != sorted(planned_plugins):
@@ -277,7 +277,7 @@ def check_shell_bit(path: pathlib.Path, failures: list[str]) -> None:
     """A .sh wrapper is spawned directly, so off Windows it needs the executable bit."""
     if os.name != "nt" and path.is_file() and not os.access(path, os.X_OK):
         failures.append(
-            f"{path} is not executable; rerun Install-Workspace.ps1 -Apply, which sets the bit"
+            f"{path} is not executable; rerun bun scripts/install/main.ts -Apply, which sets the bit"
         )
 
 
@@ -301,7 +301,7 @@ def check_missing_wrapper(
         local = local_bin / (f"{command}.cmd" if os.name == "nt" else command)
         if local.is_file():
             failures.append(
-                f"the {command} CLI is installed under {local_bin}, and layers configure {runtime}, but stack.lock.json records no {runtime} wrapper; rerun Install-Workspace.ps1 -Apply"
+                f"the {command} CLI is installed under {local_bin}, and layers configure {runtime}, but stack.lock.json records no {runtime} wrapper; rerun bun scripts/install/main.ts -Apply"
             )
             return
     found = shutil.which(command)
@@ -311,7 +311,7 @@ def check_missing_wrapper(
     if os.path.normcase(os.path.abspath(found)).startswith(bin_prefix):
         return
     failures.append(
-        f"the {command} CLI is on PATH, and layers configure {runtime}, but stack.lock.json records no {runtime} wrapper; rerun Install-Workspace.ps1 -Apply"
+        f"the {command} CLI is on PATH, and layers configure {runtime}, but stack.lock.json records no {runtime} wrapper; rerun bun scripts/install/main.ts -Apply"
     )
 
 
