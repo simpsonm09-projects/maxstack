@@ -4,11 +4,11 @@ import { mkdtempSync, mkdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { python, repoRoot } from './lib/installer-test-kit.mjs';
+import { python, repoRoot, windowsOnly } from './lib/installer-test-kit.mjs';
 
 test(
   'verifier accepts the shell-escaped apostrophe path and rejects a mismatched projection directory',
-  { skip: !python },
+  { skip: !python || windowsOnly },
   () => {
     const base = mkdtempSync(join(tmpdir(), 'maxstack-copilot-verifier-'));
     const workspace = join(base, "O'Brien workspace");

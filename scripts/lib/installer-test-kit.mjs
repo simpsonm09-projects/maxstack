@@ -24,6 +24,12 @@ export const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '
 
 export const installer = join(repoRoot, 'scripts', 'Install-Workspace.ps1');
 
+// The TypeScript installer. Under Bun every suite runs it; under Node every suite runs the PowerShell one, so the same
+// assertions cover both until the PowerShell files are removed.
+export const tsInstaller = join(repoRoot, 'scripts', 'install', 'main.ts');
+
+export const runnerMode = process.versions.bun ? 'ts' : 'ps';
+
 // The two local layers. Each declares every runtime, and each needs a manifest whose name
 // matches its layer name. pstack is pinned to a git source and needs no local checkout.
 export const LOCAL_LAYERS = ['projects/repos/org-ai-plugin', 'projects/repos/personal-ai-plugin'];
@@ -44,6 +50,10 @@ export function findShell() {
     ? 'pwsh'
     : null;
 }
+
+// The PowerShell shell, for the tests that run a PowerShell module directly or compare with an older installer. It is
+// separate from `shell` because a Bun run still needs pwsh for those comparisons.
+export const psShell = findShell();
 
 export function writeFile(root, rel, content) {
   const full = join(root, ...rel.split('/'));
@@ -220,15 +230,27 @@ export function makeFixture(base, { npm = false, shipLock = false, shipShrinkwra
 
 // A stand-in for the Copilot CLI: it echoes its arguments.
 export function writeFakeCopilot(base) {
-  const path = join(base, 'fake-copilot.cmd');
-  writeFileSync(path, '@echo off\r\necho ARGS=%*\r\n');
+  if (process.platform === 'win32') {
+    const path = join(base, 'fake-copilot.cmd');
+    writeFileSync(path, '@echo off\r\necho ARGS=%*\r\n');
+    return path;
+  }
+  const path = join(base, 'fake-copilot');
+  writeFileSync(path, '#!/bin/sh\necho ARGS="$@"\n');
+  chmodSync(path, 0o755);
   return path;
 }
 
 // A stand-in for the Pi CLI: it echoes the agent folder and its arguments.
 export function writeFakePi(base) {
-  const path = join(base, 'fake-pi.cmd');
-  writeFileSync(path, '@echo off\r\necho AGENT_DIR=%PI_CODING_AGENT_DIR%\r\necho ARGS=%*\r\n');
+  if (process.platform === 'win32') {
+    const path = join(base, 'fake-pi.cmd');
+    writeFileSync(path, '@echo off\r\necho AGENT_DIR=%PI_CODING_AGENT_DIR%\r\necho ARGS=%*\r\n');
+    return path;
+  }
+  const path = join(base, 'fake-pi');
+  writeFileSync(path, '#!/bin/sh\necho AGENT_DIR="$PI_CODING_AGENT_DIR"\necho ARGS="$@"\n');
+  chmodSync(path, 0o755);
   return path;
 }
 
@@ -364,10 +386,6 @@ export function runInstaller(
   const pi =
     !includeRuntimeCommands || extra.includes('-PiCommand') ? [] : ['-PiCommand', ctx.fakePi];
   const args = [
-    '-NoProfile',
-    '-NonInteractive',
-    '-File',
-    installerPath,
     '-Workspace',
     ctx.workspace,
     ...(layersFile ? ['-LayersFile', layersFile] : []),
@@ -376,10 +394,21 @@ export function runInstaller(
     ...(apply ? ['-Apply'] : []),
     ...extra,
   ];
-  return spawnSync(shell, args, {
+  const childEnv = testEnvironment(env ?? ctx.env);
+  // A named installer is a PowerShell file, so a comparison with an older installer still runs pwsh.
+  const current = installerPath === installer || installerPath === tsInstaller;
+  if (runnerMode === 'ts' && current) {
+    return spawnSync(process.execPath, [tsInstaller, ...args], {
+      windowsHide: true,
+      encoding: 'utf8',
+      env: childEnv,
+    });
+  }
+  if (!psShell) throw new Error(`pwsh is not available to run ${installerPath}`);
+  return spawnSync(psShell, ['-NoProfile', '-NonInteractive', '-File', installerPath, ...args], {
     windowsHide: true,
     encoding: 'utf8',
-    env: testEnvironment(env ?? ctx.env),
+    env: childEnv,
   });
 }
 
@@ -388,6 +417,37 @@ export function runWorkspaceDiscovery(
   caseValue,
   { launchCwd = ctx.base, env = undefined } = {},
 ) {
+  const childEnv = testEnvironment(env ?? process.env);
+  for (const key of Object.keys(childEnv))
+    if (key.toUpperCase() === 'MAXSTACK_WORKSPACE') delete childEnv[key];
+  if (caseValue.kind === 'environment') childEnv.MAXSTACK_WORKSPACE = caseValue.path;
+  if (runnerMode === 'ts') {
+    const module = join(repoRoot, 'scripts', 'install', 'discovery.ts').replaceAll('\\', '/');
+    const script = join(ctx.base, 'workspace-discovery.ts');
+    const defaultRoot = join(repoRoot, 'scripts').replaceAll('\\', '/');
+    writeFileSync(
+      script,
+      `import { resolveMaxstackWorkspace } from '${module}';\n` +
+        `const caseValue = ${JSON.stringify(caseValue)};\n` +
+        `const scriptRoot = caseValue.scriptRoot ?? '${defaultRoot}';\n` +
+        `try {\n` +
+        `  let result;\n` +
+        `  switch (caseValue.kind) {\n` +
+        `    case 'explicit': result = resolveMaxstackWorkspace({ explicitSpecified: true, explicitValue: caseValue.path, scriptRoot }); break;\n` +
+        `    case 'environment': result = resolveMaxstackWorkspace({ scriptRoot }); break;\n` +
+        `    case 'scriptRoot': result = resolveMaxstackWorkspace({ scriptRoot: caseValue.path }); break;\n` +
+        `    default: result = resolveMaxstackWorkspace({ currentDirectory: caseValue.path, scriptRoot }); break;\n` +
+        `  }\n` +
+        `  console.log('ORIGIN=' + result.origin + ';WORKSPACE=' + result.workspace);\n` +
+        `} catch (error) { console.log(error instanceof Error ? error.message : String(error)); process.exit(2); }\n`,
+    );
+    return spawnSync(process.execPath, [script], {
+      windowsHide: true,
+      encoding: 'utf8',
+      cwd: launchCwd,
+      env: childEnv,
+    });
+  }
   const helper = join(repoRoot, 'scripts', 'Install-WorkspaceDiscovery.ps1').replaceAll("'", "''");
   const encoded = Buffer.from(JSON.stringify(caseValue)).toString('base64');
   const script = join(ctx.base, 'workspace-discovery.ps1');
@@ -395,11 +455,8 @@ export function runWorkspaceDiscovery(
     script,
     `$ErrorActionPreference = 'Stop'\n$PSStyle.OutputRendering = 'PlainText'\n. '${helper}'\n$caseValue = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${encoded}')) | ConvertFrom-Json -AsHashtable\ntry {\n  switch ($caseValue.kind) {\n    'explicit' { $result = Resolve-MaxstackWorkspace -ExplicitSpecified -ExplicitValue $caseValue.path }\n    'environment' { $result = Resolve-MaxstackWorkspace -ScriptRoot $caseValue.scriptRoot }\n    'scriptRoot' { $result = Resolve-MaxstackWorkspace -ScriptRoot $caseValue.path }\n    'currentDirectory' { $result = Resolve-MaxstackWorkspace -CurrentDirectory $caseValue.path -ScriptRoot $caseValue.scriptRoot }\n    'marker' { $result = Resolve-MaxstackWorkspace -CurrentDirectory $caseValue.path -ScriptRoot $caseValue.scriptRoot }\n    'noWorkspace' { $result = Resolve-MaxstackWorkspace -CurrentDirectory $caseValue.path -ScriptRoot $caseValue.scriptRoot }\n  }\n  [Console]::Out.WriteLine("ORIGIN=$($result.Origin);WORKSPACE=$($result.Workspace)")\n} catch { [Console]::Out.WriteLine($_.Exception.Message); exit 2 }\n`,
   );
-  const childEnv = testEnvironment(env ?? process.env);
-  for (const key of Object.keys(childEnv))
-    if (key.toUpperCase() === 'MAXSTACK_WORKSPACE') delete childEnv[key];
-  if (caseValue.kind === 'environment') childEnv.MAXSTACK_WORKSPACE = caseValue.path;
-  return spawnSync(shell, ['-NoProfile', '-NonInteractive', '-File', script], {
+  if (!psShell) throw new Error('pwsh is not available to run workspace discovery');
+  return spawnSync(psShell, ['-NoProfile', '-NonInteractive', '-File', script], {
     windowsHide: true,
     encoding: 'utf8',
     cwd: launchCwd,
@@ -446,9 +503,12 @@ export function isLink(path) {
   return stat ? stat.isSymbolicLink() : false;
 }
 
-export const shell = findShell();
+// The program every suite starts: Bun under `bun test`, pwsh under `node --test`.
+// The PowerShell shell every direct run uses: the module tests, the git-guard tests, and the older-installer
+// comparisons. The installer itself goes through runInstaller, which picks the TypeScript entry point under Bun.
+export const shell = psShell;
 
-export const skip = shell ? false : 'pwsh is not available';
+export const skip = psShell ? false : 'pwsh is not available';
 
 export function findPython() {
   for (const name of ['python', 'python3']) {
@@ -484,6 +544,25 @@ export function withWorkspaceNeeding(label, available, name, body, options) {
   });
 }
 
+// A test whose assertions name a Windows artifact: a .cmd wrapper, a junction that rmdir removes, a backslash path, or
+// CRLF JSON. It runs on Windows and is skipped elsewhere with that reason. The POSIX suite covers the same behavior
+// through the shell wrapper and the POSIX paths.
+export const windowsOnly =
+  process.platform === 'win32'
+    ? false
+    : 'the assertion names a Windows-only wrapper, link, path, or line ending';
+
+export function withWindowsWorkspace(name, body, options) {
+  test(name, { skip: skip || windowsOnly }, () => {
+    const ctx = buildWorkspace(options);
+    try {
+      body(ctx);
+    } finally {
+      rmSync(ctx.base, { recursive: true, force: true });
+    }
+  });
+}
+
 export function mustApply(ctx, extra = [], options = {}) {
   const run = runInstaller(shell, ctx, extra, options);
   assert.equal(run.status, 0, `installer exited ${run.status}\n${run.stdout}\n${run.stderr}`);
@@ -501,8 +580,13 @@ export const mainCommitAvailable =
 // A test that compares with MAIN_COMMIT. Without the commit it is skipped locally, with the reason. In CI (CI=true) it
 // fails instead, so a shallow checkout cannot pass by comparing nothing.
 export function withMainCommit(name, body, options) {
+  // The upstream main installer builds a git layer's folder with a backslash, so it cannot run on POSIX.
+  const upstreamWindowsOnly =
+    process.platform === 'win32' ? false : 'the upstream main installer runs only on Windows';
   const reason =
     skip ||
+    upstreamWindowsOnly ||
+    (runnerMode === 'ts' && !psShell ? 'pwsh is not available' : false) ||
     (mainCommitAvailable || process.env.CI === 'true'
       ? false
       : `commit ${MAIN_COMMIT} is not in this checkout`);
@@ -915,8 +999,18 @@ export const layerSourcesFile = join(repoRoot, 'scripts', 'Install-LayerSources.
 export const SHORTHAND_URL = 'https://github.com/simpsonm09/pstack-max.git';
 
 export function resolveShorthand(env) {
+  if (runnerMode === 'ts') {
+    const module = join(repoRoot, 'scripts', 'install', 'layer-sources.ts').replaceAll('\\', '/');
+    const code = `import { githubRemoteUrl } from '${module}'; console.log(githubRemoteUrl('simpsonm09', 'pstack-max'));`;
+    return spawnSync(process.execPath, ['-e', code], {
+      windowsHide: true,
+      encoding: 'utf8',
+      cwd: repoRoot,
+      env,
+    });
+  }
   const script = `. '${layerSourcesFile}'; Get-GitHubRemoteUrl -Owner 'simpsonm09' -Repo 'pstack-max'`;
-  return spawnSync(shell, ['-NoProfile', '-NonInteractive', '-Command', script], {
+  return spawnSync(psShell, ['-NoProfile', '-NonInteractive', '-Command', script], {
     windowsHide: true,
     encoding: 'utf8',
     env,
@@ -930,9 +1024,9 @@ export function sourceBlockIn(lock, name) {
 // Review items N1 to N10 of c2d0d54. Each test names the item it covers, and each fails before its fix.
 // The 8.3 name of an existing folder, as the filesystem reports it, or null when the folder cannot be read.
 export const shortPathOf = (path) => {
-  if (process.platform !== 'win32' || !shell) return null;
+  if (process.platform !== 'win32' || !psShell) return null;
   const script = `(New-Object -ComObject Scripting.FileSystemObject).GetFolder('${path.replaceAll("'", "''")}').ShortPath`;
-  const run = spawnSync(shell, ['-NoProfile', '-NonInteractive', '-Command', script], {
+  const run = spawnSync(psShell, ['-NoProfile', '-NonInteractive', '-Command', script], {
     windowsHide: true,
     encoding: 'utf8',
   });

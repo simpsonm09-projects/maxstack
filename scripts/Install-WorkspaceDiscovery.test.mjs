@@ -15,17 +15,40 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join, parse, resolve } from 'node:path';
+import { dirname, join, parse, resolve, sep } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const helper = join(repoRoot, 'scripts', 'Install-WorkspaceDiscovery.ps1');
 const installer = join(repoRoot, 'scripts', 'Install-Workspace.ps1');
+const tsInstaller = join(repoRoot, 'scripts', 'install', 'main.ts');
+
+// The installer the run under test drives: TypeScript under Bun, PowerShell under node --test.
+function spawnInstaller(extra, { workspace, layersFile, cwd, env }) {
+  const args = ['-Workspace', workspace, '-LayersFile', layersFile, ...extra];
+  if (process.versions.bun) {
+    return spawnSync(process.execPath, [tsInstaller, ...args], {
+      windowsHide: true,
+      encoding: 'utf8',
+      cwd,
+      env,
+    });
+  }
+  return spawnSync(shell, ['-NoProfile', '-NonInteractive', '-File', installer, ...args], {
+    windowsHide: true,
+    encoding: 'utf8',
+    cwd,
+    env,
+  });
+}
 const shell =
   spawnSync('pwsh', ['-NoProfile', '-Command', 'exit 0'], { windowsHide: true }).status === 0
     ? 'pwsh'
     : null;
+// These cases exercise Windows path semantics (case-insensitive lookup, 8.3 names, drive roots, MAX_PATH display).
+const windowsOnly =
+  process.platform === 'win32' ? false : 'the assertion names Windows-only path behaviour';
 function makeRoot() {
   return mkdtempSync(join(tmpdir(), 'maxstack-discovery-'));
 }
@@ -201,7 +224,7 @@ test(
 
 test(
   'explicit path matching is case-insensitive on Windows and keeps the case given',
-  { skip: !shell },
+  { skip: !shell || windowsOnly },
   () =>
     withRoot((root) => {
       const target = marker(directory(root, 'CaseSensitiveName'));
@@ -314,7 +337,7 @@ test(
     withRoot((root) => {
       const target = marker(directory(root, 'trailing'));
       resolveCase(
-        { explicitSpecified: true, explicitValue: `${target}\\`, cwd: root },
+        { explicitSpecified: true, explicitValue: `${target}${sep}`, cwd: root },
         target,
         '-Workspace',
       );
@@ -544,7 +567,7 @@ test(
     withRoot((root) => {
       const base = directory(root, 'base');
       const sibling = marker(directory(root, 'sibling'));
-      resolveCase({ envWorkspace: '..\\sibling', cwd: base }, sibling, 'MAXSTACK_WORKSPACE');
+      resolveCase({ envWorkspace: `..${sep}sibling`, cwd: base }, sibling, 'MAXSTACK_WORKSPACE');
     }),
 );
 
@@ -803,7 +826,7 @@ test(
 
 test(
   'a literal folder whose name looks like an 8.3 short name is an accepted explicit target',
-  { skip: !shell },
+  { skip: !shell || windowsOnly },
   () =>
     withRoot((root) => {
       for (const name of ['Q~1', 'ABCDEFGH~1']) {
@@ -945,7 +968,7 @@ function withSubstDrive(t, body) {
 
 test(
   'a marker in a drive root is skipped by the walk, so a no-flag run does not abort',
-  { skip: !shell },
+  { skip: !shell || windowsOnly },
   (t) =>
     withSubstDrive(t, (root, drive) => {
       writeFileSync(`${drive}\stack.lock.json`, '{}');
@@ -1113,7 +1136,7 @@ test(
 
 test(
   'a display longer than 260 characters is cut and marked with an ellipsis',
-  { skip: !shell },
+  { skip: !shell || windowsOnly },
   () =>
     withRoot((root) => {
       const long = join(root, 'a'.repeat(300));
@@ -1128,7 +1151,7 @@ test(
 // location they would name a folder the user did not give. They are refused, and nothing is looked up.
 test(
   'a drive-relative or root-relative user value is refused, and never resolved against the process location',
-  { skip: !shell },
+  { skip: !shell || windowsOnly },
   () =>
     withRoot((root) => {
       const drive = parse(root).root.slice(0, 2);
@@ -1278,33 +1301,23 @@ test(
         ['-Uninstall', '-Apply'],
         ['-Remove', '-Runtimes', 'claude', '-Apply'],
       ]) {
-        const run = spawnSync(
-          shell,
-          [
-            '-NoProfile',
-            '-NonInteractive',
-            '-File',
-            installer,
-            '-Workspace',
-            workspace,
-            '-LayersFile',
-            emptyLayers,
-            ...extra,
-          ],
-          {
-            windowsHide: true,
-            encoding: 'utf8',
-            cwd: root,
-            env: { ...process.env, MAXSTACK_WORKSPACE: '' },
-          },
-        );
+        const run = spawnInstaller(extra, {
+          workspace,
+          layersFile: emptyLayers,
+          cwd: root,
+          env: { ...process.env, MAXSTACK_WORKSPACE: '' },
+        });
         assert.notEqual(
           run.status,
           0,
           `${extra.join(' ')} acted through a linked lock: ${run.stdout}${run.stderr}`,
         );
+        // PowerShell wraps and colours a long error record; the words are what matter.
+        const shown = `${run.stdout}${run.stderr}`
+          .replace(/\u001b\[[0-9;]*m/g, '')
+          .replace(/\s+/g, ' ');
         assert.match(
-          `${run.stdout}${run.stderr}`,
+          shown,
           /stack\.lock\.json is a symbolic link or junction, so -Remove and -Uninstall refuse/,
           extra.join(' '),
         );

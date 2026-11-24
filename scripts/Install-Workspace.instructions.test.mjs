@@ -357,9 +357,7 @@ withWorkspace(
 withWorkspace(
   'Copilot selection without declared instructions creates no projection or env path',
   (ctx) => {
-    const fake = join(ctx.base, 'fake-copilot.cmd');
-    writeFileSync(fake, '@echo off\r\n');
-    const run = install(ctx, ['-Runtimes', 'claude,copilot', '-CopilotCommand', fake]);
+    const run = install(ctx, ['-Runtimes', 'claude,copilot', '-CopilotCommand', ctx.fakeCopilot]);
     assert.equal(run.status, 0, plainOutput(run));
     assert.ok(!existsSync(join(ctx.workspace, '.maxstack', 'copilot-instructions', 'AGENTS.md')));
     assert.ok(
@@ -367,7 +365,15 @@ withWorkspace(
       'no projection directory is created when no instructions are declared',
     );
     assert.doesNotMatch(
-      readFileSync(join(ctx.workspace, '.maxstack', 'bin', 'copilot.cmd'), 'utf8'),
+      readFileSync(
+        join(
+          ctx.workspace,
+          '.maxstack',
+          'bin',
+          process.platform === 'win32' ? 'copilot.cmd' : 'copilot.sh',
+        ),
+        'utf8',
+      ),
       /COPILOT_CUSTOM_INSTRUCTIONS_DIRS/,
     );
     assert.ok(

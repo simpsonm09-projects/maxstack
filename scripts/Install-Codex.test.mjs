@@ -41,6 +41,7 @@ import {
   writeFakeCopilot,
   writeFakePi,
   writeFile,
+  windowsOnly,
   writeLayers,
 } from './lib/installer-test-kit.mjs';
 
@@ -274,6 +275,18 @@ function ownedSkillRecords(lock) {
 
 function withContext(name, body, options) {
   test(name, { skip }, () => {
+    const ctx = buildContext(options);
+    try {
+      body(ctx);
+    } finally {
+      rmSync(ctx.base, { recursive: true, force: true });
+    }
+  });
+}
+
+// The byte-for-byte comparisons run the base commit's PowerShell installer, which builds Windows paths.
+function withWindowsContext(name, body, options) {
+  test(name, { skip: skip || windowsOnly }, () => {
     const ctx = buildContext(options);
     try {
       body(ctx);
@@ -963,7 +976,7 @@ function captureApply(ctx, { installerPath, layersFile }, { legacy = null } = {}
   };
 }
 
-withContext(
+withWindowsContext(
   'a new workspace with no codex selection writes the same output, lock, and files as before',
   (shared) => {
     const base = exportBaseTree(shared);
@@ -986,7 +999,7 @@ withContext(
   },
 );
 
-withContext(
+withWindowsContext(
   'an old lock with no selection field is applied the same as before, and codex is not added',
   (shared) => {
     const base = exportBaseTree(shared);

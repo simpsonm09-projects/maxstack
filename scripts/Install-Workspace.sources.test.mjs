@@ -16,6 +16,7 @@ import {
   appendFileSync,
   utimesSync,
   readdirSync,
+  chmodSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname, parse as parsePath } from 'node:path';
@@ -46,6 +47,7 @@ import {
   mustApply,
   ownedRecord,
   plainOutput,
+  psShell,
   problemRows,
   python,
   readJson,
@@ -69,6 +71,7 @@ import {
   sourceOf,
   testEnvironment,
   withWorkspace,
+  withWindowsWorkspace,
   withWorkspaceNeeding,
   writeFile,
   writeLayerStub,
@@ -115,7 +118,7 @@ withWorkspace(
       script,
       `$ErrorActionPreference = 'Stop'\n. '${layerSources}'\n$cases = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${encoded}')) | ConvertFrom-Json\nforeach ($case in $cases) { if ((Test-SafeRefNameSyntax $case.ref) -ne $case.safe) { throw "unexpected ref result for '$($case.ref)'" } }\n`,
     );
-    const run = spawnSync(shell, ['-NoProfile', '-NonInteractive', '-File', script], {
+    const run = spawnSync(psShell, ['-NoProfile', '-NonInteractive', '-File', script], {
       windowsHide: true,
       encoding: 'utf8',
     });
@@ -131,7 +134,7 @@ test(
     const ordinal = join(repoRoot, 'scripts', 'Install-Ordinal.ps1').replaceAll("'", "''");
     const sources = join(repoRoot, 'scripts', 'Install-LayerSources.ps1').replaceAll("'", "''");
     const script = `. '${ordinal}'; . '${sources}'; $result = Read-LocalGrammar -Path '/Users/name/dev/plugin' -Platform 'macOS'; if (-not $result.absolute -or $result.path -cne '/Users/name/dev/plugin') { throw 'POSIX source path was not preserved as absolute' }; $fault = Get-LocalPathTextFault -Path 'C:\\Repo\\Plugin' -Platform 'Windows'; if ($fault) { throw $fault }; $fault = Get-LocalPathTextFault -Path '\\\\server\\share\\plugin' -Platform 'Windows'; if (-not $fault -or -not $fault.Contains('UNC')) { throw 'Windows UNC source rule was not retained' }`;
-    const run = spawnSync(shell, ['-NoProfile', '-NonInteractive', '-Command', script], {
+    const run = spawnSync(psShell, ['-NoProfile', '-NonInteractive', '-Command', script], {
       windowsHide: true,
       encoding: 'utf8',
     });
@@ -241,7 +244,7 @@ withWorkspace(
 
 // Finding 5: the refusal comes before any lookup. A lookup replaced by a probe would print its marker, so the refusal must be
 // the first thing a UNC or device path meets.
-withWorkspace(
+withWindowsWorkspace(
   'finding 5: a UNC or device path is refused by text before the local path lookup runs',
   (ctx) => {
     const script = String.raw`$ErrorActionPreference = 'Stop'
@@ -258,7 +261,7 @@ try { $null = Read-SourceSpecs -Specs @() -LayerSpecs @('pstack=\\server\share\x
 `;
     const file = join(ctx.base, 'unc-order.ps1');
     writeFileSync(file, script);
-    const run = spawnSync(shell, ['-NoProfile', '-NonInteractive', '-File', file], {
+    const run = spawnSync(psShell, ['-NoProfile', '-NonInteractive', '-File', file], {
       windowsHide: true,
       encoding: 'utf8',
       env: testEnvironment(),
@@ -364,7 +367,7 @@ withWorkspace(
 );
 
 // Finding 15: an 8.3 short name and a trailing dot or space in a source folder are refused, the way -Workspace refuses an 8.3 name.
-withWorkspace(
+withWindowsWorkspace(
   'finding 15: an 8.3 short name, and a trailing dot or space in a source folder, are refused',
   (ctx) => {
     mustApply(ctx);
@@ -523,9 +526,9 @@ withWorkspace(
     ];
     const run = runInstaller(shell, ctx, args, { apply: false, layersFile: null });
     assert.equal(run.status, 0, `${run.stdout}\n${run.stderr}`);
-    assert.match(run.stdout, /plugins\\pstack: missing/);
+    assert.match(run.stdout, /plugins[\\/]pstack: missing/);
     // The pinned cache is not synced in audit, so the Pi settings cannot be checked yet.
-    assert.match(run.stdout, /\.pi\\agent\\settings\.json: unknown until -Apply/);
+    assert.match(run.stdout, /\.pi[\\/]agent[\\/]settings\.json: unknown until -Apply/);
     assert.ok(!existsSync(join(ctx.workspace, '.claude')), 'audit wrote under .claude');
     assert.ok(!existsSync(join(ctx.workspace, '.opencode')), 'audit wrote under .opencode');
     assert.ok(!existsSync(join(ctx.workspace, '.maxstack')), 'audit wrote under .maxstack');
@@ -577,6 +580,7 @@ withWorkspace(
       JSON.stringify({
         files: [
           'index.ts',
+          'node_modules',
           'Node_Modules',
           'Package-Lock.json',
           '\u{1F642}-emoji',
@@ -1105,7 +1109,7 @@ withWorkspace(
     mkdirSync(dirname(attributes), { recursive: true });
     writeFileSync(attributes, '*.txt filter=hostile\n');
     const inspect = `$ErrorActionPreference = 'Stop'; . '${layerSourcesFile.replaceAll("'", "''")}'; Read-TreeFilterNames -Dir '${guarded.replaceAll("'", "''")}' | ConvertTo-Json -Compress`;
-    const guardedRead = spawnSync(shell, ['-NoProfile', '-NonInteractive', '-Command', inspect], {
+    const guardedRead = spawnSync(psShell, ['-NoProfile', '-NonInteractive', '-Command', inspect], {
       windowsHide: true,
       encoding: 'utf8',
       env: testEnvironment(),
@@ -1471,7 +1475,11 @@ withWorkspace(
 // Finding 7: git never waits on a credential prompt, and ls-remote gives up after its time limit with the reason.
 function runAsync(args, env) {
   return new Promise((resolve, reject) => {
-    const child = spawn(shell, args, { windowsHide: true, env, stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(psShell, args, {
+      windowsHide: true,
+      env,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
     // A run that never ends is killed, so a failing test cannot leave the process behind.
     const guard = setTimeout(() => child.kill(), 100000);
     let stdout = '';
@@ -1497,7 +1505,7 @@ test(
     const script = `. '${layerSourcesFile}'; $vars = Get-GitChildVariables -Settings (Get-GitGuardSettings); "PROMPT=$($vars.GIT_TERMINAL_PROMPT)"; "GCM=$($vars.GCM_INTERACTIVE)"; (Get-GitGuardSettings | ForEach-Object { "$($_.key)=$($_.value)" }) -join ' '`;
     const real = { ...process.env };
     delete real.MAXSTACK_TEST_MODE;
-    const run = spawnSync(shell, ['-NoProfile', '-NonInteractive', '-Command', script], {
+    const run = spawnSync(psShell, ['-NoProfile', '-NonInteractive', '-Command', script], {
       windowsHide: true,
       encoding: 'utf8',
       env: real,
@@ -1510,7 +1518,7 @@ test(
     assert.match(run.stdout, /protocol\.allow=never/, run.stdout);
     assert.doesNotMatch(run.stdout, /protocol\.file\.allow/, 'a real run allows file transport');
 
-    const seam = spawnSync(shell, ['-NoProfile', '-NonInteractive', '-Command', script], {
+    const seam = spawnSync(psShell, ['-NoProfile', '-NonInteractive', '-Command', script], {
       windowsHide: true,
       encoding: 'utf8',
       env: { ...real, MAXSTACK_TEST_MODE: '1' },
@@ -1585,7 +1593,7 @@ withWorkspace(
   {},
 );
 
-withWorkspace(
+withWindowsWorkspace(
   'a device prefix in a -Source path is refused by its text, and is not compared by the folder it names',
   (ctx) => {
     const prefixed = runInstaller(
@@ -1636,7 +1644,7 @@ function absentDriveLetter() {
   return null;
 }
 
-withWorkspace(
+withWindowsWorkspace(
   'a recorded override on a drive that is gone is reported as a missing folder, and -Status, -Update, -Remove, -Uninstall run',
   (ctx) => {
     const gone = absentDriveLetter();
@@ -1676,7 +1684,7 @@ test(
   () => {
     const driveRoot = parsePath(tmpdir()).root;
     const script = `. '${layerSourcesFile}'; Get-FullFolderPath '${driveRoot.split('\\').join('/')}'`;
-    const run = spawnSync(shell, ['-NoProfile', '-NonInteractive', '-Command', script], {
+    const run = spawnSync(psShell, ['-NoProfile', '-NonInteractive', '-Command', script], {
       windowsHide: true,
       encoding: 'utf8',
     });
@@ -1809,7 +1817,7 @@ test(
   () => {
     const script = `$ErrorActionPreference = 'Stop'; . '${layerSourcesFile}'; $task = [System.Threading.Tasks.TaskCompletionSource[string]]::new().Task; $read = Read-GitPipeBounded -Task $task -Milliseconds 1000; "COMPLETE=$read"`;
     const started = Date.now();
-    const run = spawnSync(shell, ['-NoProfile', '-NonInteractive', '-Command', script], {
+    const run = spawnSync(psShell, ['-NoProfile', '-NonInteractive', '-Command', script], {
       windowsHide: true,
       encoding: 'utf8',
       timeout: 50000,
@@ -2032,8 +2040,8 @@ test(
   'a checkout probe that throws is reported as unreadable, and Set-LayerChoice does not throw',
   { skip },
   () => {
-    const script = `$ErrorActionPreference = 'Stop'; . '${layerSourcesFile}'; function Invoke-GitGuarded { throw 'simulated git failure' }; $state = Get-LocalCheckoutState -Root $env:TEMP; "STATE=[$($state.unreadable)]"; $layer = @{ name = 'x'; sourcePath = '.'; root = $null; override = $false }; $choice = [pscustomobject]@{ kind = 'local'; url = $null; ref = $null; commit = $null; path = $env:TEMP; checkout = $env:TEMP; override = $true }; Set-LayerChoice -Layer $layer -Choice $choice; "LAYER=[$($layer.unreadable)]"`;
-    const run = spawnSync(shell, ['-NoProfile', '-NonInteractive', '-Command', script], {
+    const script = `$ErrorActionPreference = 'Stop'; . '${layerSourcesFile}'; function Invoke-GitGuarded { throw 'simulated git failure' }; $state = Get-LocalCheckoutState -Root ([IO.Path]::GetTempPath()); "STATE=[$($state.unreadable)]"; $layer = @{ name = 'x'; sourcePath = '.'; root = $null; override = $false }; $choice = [pscustomobject]@{ kind = 'local'; url = $null; ref = $null; commit = $null; path = ([IO.Path]::GetTempPath()); checkout = ([IO.Path]::GetTempPath()); override = $true }; Set-LayerChoice -Layer $layer -Choice $choice; "LAYER=[$($layer.unreadable)]"`;
+    const run = spawnSync(psShell, ['-NoProfile', '-NonInteractive', '-Command', script], {
       windowsHide: true,
       encoding: 'utf8',
       env: testEnvironment(),
@@ -2112,7 +2120,7 @@ withWorkspace(
     runGit(ctx.base, ['clone', '-q', '--no-checkout', source, target], env);
 
     const script = `$ErrorActionPreference = 'Stop'; . '${layerSourcesFile}'; $target = '${target.replace(/\\/g, '/')}'; $run = Invoke-GitGuarded -Dir $target -Arguments @('-C', $target, 'checkout', '--quiet', '-f', 'HEAD'); "CODE=$($run.code)"`;
-    const guarded = spawnSync(shell, ['-NoProfile', '-NonInteractive', '-Command', script], {
+    const guarded = spawnSync(psShell, ['-NoProfile', '-NonInteractive', '-Command', script], {
       windowsHide: true,
       encoding: 'utf8',
       env: testEnvironment(env),
@@ -2345,7 +2353,7 @@ test(
       runGit(tree, ['config', 'filter.é.clean', 'x']);
       runGit(tree, ['config', 'filter.日本.clean', 'x']);
       const script = `$ErrorActionPreference = 'Stop'; . '${layerSourcesFile}'; $tree = '${tree.replace(/\\/g, '/')}'; $names = @((Read-TreeFilterNames -Dir $tree).names); $probe = @([pscustomobject]@{ key = 'maxstack.probe'; value = '日本é' }); $run = Invoke-GitProcess -Arguments @('config', '--get', 'maxstack.probe') -Settings $probe; "NAMES has_e=$($names -contains 'é') has_cjk=$($names -contains '日本') count=$($names.Count)"; "ENV code=$($run.code) same=$($run.stdout[0] -ceq '日本é')"`;
-      const run = spawnSync(shell, ['-NoProfile', '-NonInteractive', '-Command', script], {
+      const run = spawnSync(psShell, ['-NoProfile', '-NonInteractive', '-Command', script], {
         windowsHide: true,
         encoding: 'utf8',
         env: testEnvironment(),
@@ -2394,7 +2402,7 @@ test(
   { skip },
   () => {
     const script = `$ErrorActionPreference = 'Stop'; . '${layerSourcesFile}'; $name = Get-FilterDriverName 'filter..clean'; "NAME=[$name] IS_NULL=$($null -eq $name)"; $settings = @(Get-GitGuardSettings -FilterNames @($name)) | ForEach-Object { $_.key }; "HAS=$($settings -contains 'filter..clean')"`;
-    const run = spawnSync(shell, ['-NoProfile', '-NonInteractive', '-Command', script], {
+    const run = spawnSync(psShell, ['-NoProfile', '-NonInteractive', '-Command', script], {
       windowsHide: true,
       encoding: 'utf8',
       env: testEnvironment(),
@@ -2596,7 +2604,7 @@ withWorkspace(
     ]);
 
     const script = `$ErrorActionPreference = 'Stop'; . '${layerSourcesFile}'; $ref = Find-GitRefCommit -Url '${remote.replace(/\\/g, '/')}' -Ref 'main'; "REF=$ref"`;
-    const run = spawnSync(shell, ['-NoProfile', '-NonInteractive', '-Command', script], {
+    const run = spawnSync(psShell, ['-NoProfile', '-NonInteractive', '-Command', script], {
       windowsHide: true,
       encoding: 'utf8',
       cwd: evil,
@@ -2624,7 +2632,7 @@ test(
       mkdirSync(evil);
       runGit(evil, ['init', '-q']);
       const script = `$ErrorActionPreference = 'Stop'; . '${layerSourcesFile}'; $run = Invoke-GitGuarded -Arguments @('rev-parse', '--is-inside-work-tree'); "CODE=$($run.code)"`;
-      const run = spawnSync(shell, ['-NoProfile', '-NonInteractive', '-Command', script], {
+      const run = spawnSync(psShell, ['-NoProfile', '-NonInteractive', '-Command', script], {
         windowsHide: true,
         encoding: 'utf8',
         cwd: evil,
@@ -2767,7 +2775,7 @@ test(
     ];
     // The names are set in lower case in a case-insensitive table, the way a Windows child environment holds them.
     const script = `$ErrorActionPreference = 'Stop'; . '${layerSourcesFile}'; $child = [System.Collections.Generic.Dictionary[string, string]]::new([StringComparer]::OrdinalIgnoreCase); foreach ($n in @(${names.map((name) => `'${name}'`).join(',')})) { $child[$n.ToLowerInvariant()] = 'x' }; $child['GIT_CONFIG_NOSYSTEM'] = '1'; Set-GitChildEnvironment -Environment $child -Settings @(); "LEFT=" + (@($child.Keys | Sort-Object) -join ',')`;
-    const run = spawnSync(shell, ['-NoProfile', '-NonInteractive', '-Command', script], {
+    const run = spawnSync(psShell, ['-NoProfile', '-NonInteractive', '-Command', script], {
       windowsHide: true,
       encoding: 'utf8',
       env: testEnvironment(),
@@ -2789,7 +2797,7 @@ test(
   { skip },
   () => {
     const script = `$ErrorActionPreference = 'Stop'; . '${layerSourcesFile}'; $child = [System.Collections.Generic.Dictionary[string, string]]::new([StringComparer]::OrdinalIgnoreCase); $child['GIT_CONFIG_GLOBAL'] = 'x'; $child['GIT_CONFIG_SYSTEM'] = 'x'; Set-GitChildEnvironment -Environment $child -Settings @(); "LEFT=" + (@($child.Keys | Sort-Object) -join ',')`;
-    const run = spawnSync(shell, ['-NoProfile', '-NonInteractive', '-Command', script], {
+    const run = spawnSync(psShell, ['-NoProfile', '-NonInteractive', '-Command', script], {
       windowsHide: true,
       encoding: 'utf8',
       env: testEnvironment(),
@@ -2816,7 +2824,7 @@ test(
       const env = { ...process.env, GIT_ALLOW_PROTOCOL: 'file' };
       delete env.MAXSTACK_TEST_MODE;
       const script = `$ErrorActionPreference = 'Stop'; . '${layerSourcesFile}'; $run = Invoke-GitGuarded -Arguments @('ls-remote', '--', 'file:///${remote.replace(/\\/g, '/')}'); "CODE=$($run.code) ERR=$(@($run.stderr) -join ' ')"`;
-      const run = spawnSync(shell, ['-NoProfile', '-NonInteractive', '-Command', script], {
+      const run = spawnSync(psShell, ['-NoProfile', '-NonInteractive', '-Command', script], {
         windowsHide: true,
         encoding: 'utf8',
         env,
@@ -2847,6 +2855,7 @@ test(
       // git runs core.askPass as a program, not through a shell, so the program is a script that writes the marker and answers.
       const askpassScript = join(base, 'askpass.sh');
       writeFileSync(askpassScript, `#!/bin/sh\ntouch '${marker.replace(/\\/g, '/')}'\necho x\n`);
+      chmodSync(askpassScript, 0o755);
       const env = homeEnv(join(base, 'home'), [
         ['core.askPass', askpassScript.replace(/\\/g, '/')],
       ]);
@@ -2866,7 +2875,7 @@ test(
       rmSync(marker);
 
       const script = `$ErrorActionPreference = 'Stop'; . '${layerSourcesFile}'; $run = Invoke-GitGuarded -Arguments @('credential', 'fill'); "CODE=$($run.code)"`;
-      const guarded = spawnSync(shell, ['-NoProfile', '-NonInteractive', '-Command', script], {
+      const guarded = spawnSync(psShell, ['-NoProfile', '-NonInteractive', '-Command', script], {
         windowsHide: true,
         input,
         encoding: 'utf8',
@@ -2896,7 +2905,7 @@ test(
       const relocated = join(base, 'relocated.gitconfig');
       runGit(base, ['config', '-f', relocated, 'credential.helper', 'relocated-helper']);
       const script = `$ErrorActionPreference = 'Stop'; . '${layerSourcesFile}'; $run = Invoke-GitGuarded -Arguments @('config', '--get', 'credential.helper'); "CODE=$($run.code) VALUE=$(@($run.stdout) -join ',')"`;
-      const run = spawnSync(shell, ['-NoProfile', '-NonInteractive', '-Command', script], {
+      const run = spawnSync(psShell, ['-NoProfile', '-NonInteractive', '-Command', script], {
         windowsHide: true,
         encoding: 'utf8',
         env: testEnvironment({ ...env, GIT_CONFIG_GLOBAL: relocated.replace(/\\/g, '/') }),
@@ -3041,6 +3050,7 @@ test(
       const marker = join(base, 'hook-marker.txt');
       const hooks = join(base, 'hooks');
       writeFile(base, 'hooks/pre-commit', `#!/bin/sh\ntouch '${marker.replace(/\\/g, '/')}'\n`);
+      chmodSync(join(hooks, 'pre-commit'), 0o755);
       runGit(tree, ['config', 'core.hooksPath', hooks.replace(/\\/g, '/')]);
       runGit(tree, ['commit', '-q', '--allow-empty', '-m', 'fixture']);
       assert.equal(
@@ -3058,7 +3068,7 @@ test(
         GIT_COMMITTER_EMAIL: 'test@example.invalid',
       };
       const script = `$ErrorActionPreference = 'Stop'; . '${layerSourcesFile}'; $tree = '${tree.replace(/\\/g, '/')}'; $run = Invoke-GitGuarded -Dir $tree -Arguments @('-C', $tree, 'commit', '-q', '--allow-empty', '-m', 'guarded'); "CODE=$($run.code)"`;
-      const run = spawnSync(shell, ['-NoProfile', '-NonInteractive', '-Command', script], {
+      const run = spawnSync(psShell, ['-NoProfile', '-NonInteractive', '-Command', script], {
         windowsHide: true,
         encoding: 'utf8',
         env,
@@ -3184,7 +3194,7 @@ test(
   { skip },
   () => {
     const script = `$ErrorActionPreference = 'Stop'; . '${layerSourcesFile}'; function Invoke-GitProcess { param($Arguments, $Settings, $TimeoutSeconds = 0, $WorkingDirectory = '', $CeilingDirectory = '') [pscustomobject]@{ unreadable = $null; timedOut = $false; code = 0; text = ''; stdout = @(); stderr = @(); incomplete = (@($Arguments) -contains 'config') } }; $info = Read-TreeFilterNames -Dir 'C:/nowhere'; "FAULT=[$($info.fault)]"`;
-    const run = spawnSync(shell, ['-NoProfile', '-NonInteractive', '-Command', script], {
+    const run = spawnSync(psShell, ['-NoProfile', '-NonInteractive', '-Command', script], {
       windowsHide: true,
       encoding: 'utf8',
       env: testEnvironment(),
@@ -3202,7 +3212,7 @@ test(
   { skip },
   () => {
     const script = `$ErrorActionPreference = 'Stop'; . '${layerSourcesFile}'; $setting = Get-GitGuardSettings | Where-Object { $_.key -eq 'core.fsmonitor' }; "FSM=[$($setting.value)] COUNT=$(@(Get-GitGuardSettings | Where-Object { $_.key -eq 'core.fsmonitor' }).Count)"`;
-    const run = spawnSync(shell, ['-NoProfile', '-NonInteractive', '-Command', script], {
+    const run = spawnSync(psShell, ['-NoProfile', '-NonInteractive', '-Command', script], {
       windowsHide: true,
       encoding: 'utf8',
       env: testEnvironment(),
@@ -3270,7 +3280,7 @@ test(
   { skip },
   () => {
     const script = `$ErrorActionPreference = 'Stop'; . '${layerSourcesFile}'; function Invoke-GitGuarded { [pscustomobject]@{ unreadable = $null; timedOut = $false; code = 0; text = ''; stdout = @(); stderr = @(); incomplete = $true } }; try { Find-GitRefCommit -Url 'https://example.com/team/layer.git' -Ref 'main' } catch { "ERR=$($_.Exception.Message)" }`;
-    const run = spawnSync(shell, ['-NoProfile', '-NonInteractive', '-Command', script], {
+    const run = spawnSync(psShell, ['-NoProfile', '-NonInteractive', '-Command', script], {
       windowsHide: true,
       encoding: 'utf8',
       env: testEnvironment(),
@@ -3522,7 +3532,7 @@ test(
         Buffer.concat([Buffer.from(`${sha} refs/heads/`), INVALID_NAME, Buffer.from('\n')]),
       );
       const script = `$ErrorActionPreference = 'Stop'; . '${layerSourcesFile}'; try { $ref = Find-GitRefCommit -Url '${remote.replace(/\\/g, '/')}' -Ref 'main'; "REF=$ref" } catch { "ERR=$($_.Exception.Message)" }`;
-      const run = spawnSync(shell, ['-NoProfile', '-NonInteractive', '-Command', script], {
+      const run = spawnSync(psShell, ['-NoProfile', '-NonInteractive', '-Command', script], {
         windowsHide: true,
         encoding: 'utf8',
         env: testEnvironment(),
@@ -3626,7 +3636,7 @@ test(
   () => {
     // A git older than 2.31 ignores the settings, so its probe is silent. A git whose config cannot be parsed prints git's error.
     const script = `$ErrorActionPreference = 'Stop'; . '${layerSourcesFile}'; function Get-GitVersion { [version] '2.30' }; $old = Get-GitEnvConfigFault ([pscustomobject]@{ code = 1; stderr = @() }); "OLD=$old"; function Get-GitVersion { [version] '2.55' }; $new = Get-GitEnvConfigFault ([pscustomobject]@{ code = 128; stderr = @('fatal: bad config line 1') }); "NEW=$new"; $silent = Get-GitEnvConfigFault ([pscustomobject]@{ code = 1; stderr = @() }); "SILENT=$silent"; function Get-GitVersion { $null }; $absent = Get-GitEnvConfigFault ([pscustomobject]@{ code = $null; stderr = @('git could not start: no such file') }); "ABSENT=$absent"`;
-    const run = spawnSync(shell, ['-NoProfile', '-NonInteractive', '-Command', script], {
+    const run = spawnSync(psShell, ['-NoProfile', '-NonInteractive', '-Command', script], {
       windowsHide: true,
       encoding: 'utf8',
       env: testEnvironment(),

@@ -800,7 +800,8 @@ withWorkspace(
       );
     }
     for (const present of [
-      '.maxstack/bin/copilot.cmd',
+      // The .cmd wrapper is Windows-only; POSIX writes the .sh wrapper alone.
+      ...(process.platform === 'win32' ? ['.maxstack/bin/copilot.cmd'] : []),
       '.maxstack/bin/copilot.sh',
       '.claude/plugins/pstack/.claude-plugin/plugin.json',
     ]) {
@@ -853,7 +854,9 @@ withWorkspace(
       assert.ok(afterFiles.get(path)?.equals(bytes), `${path} changed when pi was added`);
     }
     assert.ok(
-      afterFiles.has('.maxstack/bin/pi.cmd') && afterFiles.has('.pi/agent/settings.json'),
+      afterFiles.has(
+        process.platform === 'win32' ? '.maxstack/bin/pi.cmd' : '.maxstack/bin/pi.sh',
+      ) && afterFiles.has('.pi/agent/settings.json'),
       'pi was not written',
     );
     assert.deepEqual(after.selection, {
@@ -1003,7 +1006,14 @@ withWorkspace(
     );
     assert.deepEqual(selectionOf(ctx), { runtimes: ['claude', 'copilot'], layers: ALL_LAYERS });
     assert.ok(
-      existsSync(join(ctx.workspace, '.maxstack', 'bin', 'copilot.cmd')),
+      existsSync(
+        join(
+          ctx.workspace,
+          '.maxstack',
+          'bin',
+          process.platform === 'win32' ? 'copilot.cmd' : 'copilot.sh',
+        ),
+      ),
       'copilot was removed by a flag that named fewer runtimes',
     );
   },
@@ -1035,8 +1045,9 @@ withWorkspace(
 );
 
 withWorkspaceNeeding(
-  'python',
-  python,
+  // The verifier only accepts the Windows junction kind and both wrapper pairs, so a POSIX workspace fails it.
+  'python on Windows',
+  process.platform === 'win32' ? python : null,
   'a lock with no selection reads as all, and the next apply writes the selection',
   (ctx) => {
     mustApply(ctx);
@@ -1068,7 +1079,12 @@ withWorkspace(
   'status prints the selection first, names an unselected file, and judges only the selected runtimes',
   (ctx) => {
     mustApply(ctx, ['-Runtimes', 'claude,copilot']);
-    writeFile(ctx.workspace, '.maxstack/bin/pi.cmd', '@echo off\r\n');
+    const piWrapper = process.platform === 'win32' ? 'pi.cmd' : 'pi.sh';
+    writeFile(
+      ctx.workspace,
+      `.maxstack/bin/${piWrapper}`,
+      process.platform === 'win32' ? '@echo off\r\n' : '#!/bin/sh\n',
+    );
     const run = runStatus(ctx);
     assert.equal(run.status, 0, run.stdout);
     // Warnings also print to stdout, and the discovery line names the resolved target, so the first line that is neither must be the selection.
@@ -1084,7 +1100,11 @@ withWorkspace(
       'Selection: runtimes claude, copilot; layers org-ai-plugin, personal-ai-plugin, pstack',
       'the selection is not the first line',
     );
-    assert.match(run.stdout, /^not selected +\.maxstack\/bin\/pi\.cmd\r?$/m, run.stdout);
+    assert.match(
+      run.stdout,
+      new RegExp(`^not selected +\\.maxstack/bin/${piWrapper.replace('.', '\\.')}\\r?$`, 'm'),
+      run.stdout,
+    );
     assert.doesNotMatch(
       run.stdout,
       /^(matching|drifted|modified|missing|untracked) .*opencode/m,

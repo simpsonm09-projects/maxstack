@@ -45,6 +45,11 @@ test-node:
 test-linux:
     mise exec -- node --test --test-concurrency=4 scripts/ordinal-guard.test.mjs scripts/Install-Paths.test.mjs scripts/Install-Links.test.mjs scripts/verify-manifests.test.mjs scripts/Install-Workspace.posix.test.mjs
 
+# Install the workspace bundle with the TypeScript installer. It prints the plan and writes nothing unless --apply is
+# given, so the default run is the audit.
+install-workspace *args:
+    mise exec -- bun scripts/install/main.ts {{args}}
+
 # Run the checks the required pull request path can afford: the manifest verifier and the fast Node tests.
 test:
     mise exec -- python scripts/verify-manifests.py

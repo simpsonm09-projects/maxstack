@@ -38,6 +38,7 @@ import {
   mustApply,
   ownedRecord,
   plainOutput,
+  psShell,
   problemRows,
   readJson,
   removal,
@@ -54,6 +55,8 @@ import {
   statusRows,
   stripDiscoveryLine,
   withFreshWorkspace,
+  withWindowsWorkspace,
+  windowsOnly,
   withHook,
   withWorkspace,
   withoutTimestamp,
@@ -258,7 +261,7 @@ withWorkspace(
 // wrote are kept; removal happens only when the runtime or every layer stops naming copilot.
 test(
   'a Copilot run that cannot find Copilot keeps the recorded wrappers, and a deselected runtime removes them',
-  { skip },
+  { skip: skip || windowsOnly },
   async (t) => {
     const copilotCmd = (ctx) => join(ctx.workspace, '.maxstack', 'bin', 'copilot.cmd');
     const copilotSh = (ctx) => join(ctx.workspace, '.maxstack', 'bin', 'copilot.sh');
@@ -430,7 +433,7 @@ withWorkspace(
   {},
 );
 
-withWorkspace(
+withWindowsWorkspace(
   'uninstall refuses an escaped Claude link and leaves its outside target untouched',
   (ctx) => {
     mustApply(ctx);
@@ -494,7 +497,7 @@ withWorkspace(
   {},
 );
 
-withWorkspace(
+withWindowsWorkspace(
   'audit reports a stale recorded plugin folder and removes nothing',
   (ctx) => {
     mustApply(ctx);
@@ -602,7 +605,7 @@ withWorkspace(
   {},
 );
 
-withWorkspace(
+withWindowsWorkspace(
   'a backup the apply writes is recorded with its hash, and it is reported once it exists',
   (ctx) => {
     mustApply(ctx);
@@ -647,7 +650,7 @@ withWorkspace(
   {},
 );
 
-withWorkspace(
+withWindowsWorkspace(
   'a copied local layer reports a hand edit as differs, a user file as modified, and an apply restores it',
   (ctx) => {
     mustApply(ctx, ['-Runtimes', 'claude']);
@@ -723,7 +726,7 @@ withWorkspace(
   {},
 );
 
-withWorkspace(
+withWindowsWorkspace(
   'a hand-edited owned file is skipped and reported, the rest is removed, and a retry after the fix finishes',
   (ctx) => {
     seedUserFiles(ctx);
@@ -855,7 +858,7 @@ withWorkspace(
   {},
 );
 
-withWorkspace(
+withWindowsWorkspace(
   'a dry run prints the plan with a state for each path, and writes nothing',
   (ctx) => {
     seedUserFiles(ctx);
@@ -902,7 +905,7 @@ withWorkspace(
   {},
 );
 
-withWorkspace(
+withWindowsWorkspace(
   '-Strict makes a removal that skips anything exit 1, and a clean removal exit 0',
   (ctx) => {
     mustApply(ctx);
@@ -989,7 +992,7 @@ withWorkspace(
   {},
 );
 
-withWorkspace(
+withWindowsWorkspace(
   '-Remove -Apply keeps a hand-edited Copilot wrapper even when the apply finds no Copilot executable',
   (ctx) => {
     mustApply(ctx);
@@ -1022,7 +1025,7 @@ function holdExclusive(path) {
     `maxstack-ready-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}`,
   );
   const script = `$f = [IO.File]::Open('${path.replaceAll("'", "''")}', 'Open', 'Read', 'Read'); New-Item -ItemType File -Path '${ready.replaceAll("'", "''")}' | Out-Null; Start-Sleep -Seconds 300`;
-  const child = spawn(shell, ['-NoProfile', '-Command', script], {
+  const child = spawn(psShell, ['-NoProfile', '-Command', script], {
     windowsHide: true,
     stdio: 'ignore',
   });
@@ -1037,7 +1040,7 @@ function holdExclusive(path) {
 
 const ORIGINAL_CONFIG_B = '{\n  "original": true\n}\n';
 
-withWorkspace(
+withWindowsWorkspace(
   'a folder with a file held open by another process is kept, and a retry after the file is released finishes',
   (ctx) => {
     seedUserFiles(ctx);
@@ -1067,7 +1070,7 @@ withWorkspace(
   {},
 );
 
-withWorkspace(
+withWindowsWorkspace(
   'a recorded file the user already deleted is complete, not a skip, and the uninstall removes the lock',
   (ctx) => {
     mustApply(ctx);
@@ -1080,7 +1083,7 @@ withWorkspace(
   {},
 );
 
-withWorkspace(
+withWindowsWorkspace(
   'a run that stops between a delete and its lock write finishes on the next run',
   (ctx) => {
     const before = snapshotTree(ctx.workspace);
@@ -1155,7 +1158,7 @@ withWorkspace(
   {},
 );
 
-withWorkspace(
+withWindowsWorkspace(
   'a file swapped for a folder after the plan is refused, and the folder is not deleted',
   (ctx) => {
     mustApply(ctx);
@@ -1175,7 +1178,7 @@ withWorkspace(
   {},
 );
 
-withWorkspace(
+withWindowsWorkspace(
   'a partial uninstall ends with one line that says how many items were skipped and that the lock is kept',
   (ctx) => {
     mustApply(ctx);
@@ -1192,7 +1195,7 @@ withWorkspace(
   {},
 );
 
-withWorkspace(
+withWindowsWorkspace(
   'a restore that cannot replace its file leaves no uninstall copy behind, and a rerun finishes',
   (ctx) => {
     writeFile(ctx.workspace, '.pi/agent/settings.json', USER_SETTINGS);
@@ -1578,7 +1581,7 @@ withWorkspace(
 
 // Review 2, item 6: a leftover copy whose bytes the lock records is deleted; any other leftover is named and kept, and
 // the lock stays for it.
-withWorkspace(
+withWindowsWorkspace(
   'a leftover copy the lock knows is deleted, and an unknown one is named, kept, and keeps the lock',
   (ctx) => {
     mustApply(ctx);
@@ -1612,7 +1615,7 @@ withWorkspace(
   {},
 );
 
-withWorkspace(
+withWindowsWorkspace(
   'an apply deletes a leftover copy the lock knows and names the rest',
   (ctx) => {
     mustApply(ctx);

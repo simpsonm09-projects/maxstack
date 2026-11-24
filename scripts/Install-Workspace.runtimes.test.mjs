@@ -16,7 +16,6 @@ import {
   statSync,
   mkdtempSync,
   appendFileSync,
-  rmdirSync,
   symlinkSync,
   copyFileSync,
 } from 'node:fs';
@@ -41,6 +40,7 @@ import {
   mustApply,
   ownedRecord,
   plainOutput,
+  psShell,
   problemRows,
   python,
   readJson,
@@ -57,6 +57,7 @@ import {
   verifyManifestsScript,
   verifyWorkspaceScript,
   withFreshWorkspace,
+  withWindowsWorkspace,
   withWorkspace,
   withWorkspaceNeeding,
   withoutTimestamp,
@@ -66,9 +67,13 @@ import {
   writeLayers,
 } from './lib/installer-test-kit.mjs';
 
-// On Windows a bash on PATH can be the WSL launcher, so use the one Git for Windows ships.
+// On Windows a bash on PATH can be the WSL launcher, so use the one Git for Windows ships. Off Windows the path is
+// absolute, because a test may replace PATH for the child it spawns.
 function findBash() {
-  if (process.platform !== 'win32') return 'bash';
+  if (process.platform !== 'win32') {
+    const found = spawnSync('sh', ['-c', 'command -v bash'], { encoding: 'utf8' });
+    return found.status === 0 && found.stdout.trim() ? found.stdout.trim() : null;
+  }
   const gitBash = join(
     process.env.ProgramFiles ?? 'C:\\Program Files',
     'Git',
@@ -280,10 +285,12 @@ withWorkspace(
   'Pi apply refreshes old wrappers and status is clean',
   (ctx) => {
     mustApply(ctx, []);
-    const cmdPath = join(ctx.workspace, '.maxstack', 'bin', 'pi.cmd');
     const shPath = join(ctx.workspace, '.maxstack', 'bin', 'pi.sh');
-    writeFileSync(cmdPath, readFileSync(cmdPath, 'utf8').replace(/^if \/i .*?\r?\n/m, ''));
     writeFileSync(shPath, readFileSync(shPath, 'utf8').replace(/^if \[ "\$#".*?\n/m, ''));
+    if (process.platform === 'win32') {
+      const cmdPath = join(ctx.workspace, '.maxstack', 'bin', 'pi.cmd');
+      writeFileSync(cmdPath, readFileSync(cmdPath, 'utf8').replace(/^if \/i .*?\r?\n/m, ''));
+    }
     assert.notDeepEqual(problemRows(runStatus(ctx)), [], 'status did not detect old wrappers');
     mustApply(ctx, []);
     assert.deepEqual(problemRows(runStatus(ctx)), [], 'status found drift after wrapper refresh');
@@ -311,15 +318,21 @@ withWorkspace(
     }
     mustApply(ctx, []);
     const cmdPath = join(ctx.workspace, '.maxstack', 'bin', 'pi.cmd');
-    assert.match(readFileSync(cmdPath, 'utf8'), /%~1/);
+    if (process.platform === 'win32') {
+      assert.match(readFileSync(cmdPath, 'utf8'), /%~1/);
+    }
     const helperPath = join(ctx.workspace, '.maxstack', 'bin', 'pi-self-update.mjs');
-    assert.ok(existsSync(helperPath), 'the durable Pi updater helper was not installed');
-    assert.match(readFileSync(cmdPath, 'utf8'), /pi-self-update\.mjs/);
+    if (process.platform === 'win32') {
+      assert.ok(existsSync(helperPath), 'the durable Pi updater helper was not installed');
+      assert.match(readFileSync(cmdPath, 'utf8'), /pi-self-update\.mjs/);
+    }
     const piLock = readJson(lockPath(ctx));
-    assert.ok(
-      ownedRecord(piLock, '.maxstack/bin/pi-self-update.mjs', 'file'),
-      'the lock does not own the updater helper',
-    );
+    if (process.platform === 'win32') {
+      assert.ok(
+        ownedRecord(piLock, '.maxstack/bin/pi-self-update.mjs', 'file'),
+        'the lock does not own the updater helper',
+      );
+    }
     const { env: npmEnv, argsLog } = fakePiNpm(ctx);
     const bash = findBash();
     assert.ok(bash, 'Git Bash is needed to execute pi.sh');
@@ -540,10 +553,12 @@ withWorkspace(
     assertOk(run, 'external Pi apply failed');
     const cmdPath = join(ctx.workspace, '.maxstack', 'bin', 'pi.cmd');
     const shPath = join(ctx.workspace, '.maxstack', 'bin', 'pi.sh');
-    assert.match(
-      readFileSync(cmdPath, 'utf8'),
-      new RegExp(external.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')),
-    );
+    if (process.platform === 'win32') {
+      assert.match(
+        readFileSync(cmdPath, 'utf8'),
+        new RegExp(external.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')),
+      );
+    }
     assert.match(readFileSync(shPath, 'utf8'), /selected external Pi/);
     const bash = findBash();
     assert.ok(bash, 'Git Bash is needed to execute pi.sh');
@@ -813,7 +828,7 @@ withWorkspace(
   {},
 );
 
-withWorkspace(
+withWindowsWorkspace(
   'copilot.cmd names each Claude folder in layer order, sets the switch, and passes arguments on',
   (ctx) => {
     mustApply(ctx);
@@ -847,7 +862,7 @@ withWorkspace(
   {},
 );
 
-withWorkspace(
+withWindowsWorkspace(
   'copilot.cmd runs the executable with the switch, the plugin folders, and the caller arguments',
   (ctx) => {
     mustApply(ctx);
@@ -973,24 +988,23 @@ withWorkspace(
 withWorkspace(
   'copilot with no executable found warns, keeps the recorded wrappers, and the lock keeps their records',
   (ctx) => {
+    const wrappers = process.platform === 'win32' ? ['copilot.cmd', 'copilot.sh'] : ['copilot.sh'];
     mustApply(ctx);
-    assert.ok(existsSync(join(ctx.workspace, '.maxstack', 'bin', 'copilot.cmd')));
+    assert.ok(existsSync(join(ctx.workspace, '.maxstack', 'bin', wrappers[0])));
 
     const run = mustApply(ctx, ['-CopilotCommand', MISSING_COPILOT]);
     assert.match(plainOutput(run), /Copilot CLI not found/, run.stdout);
     assert.match(
       plainOutput(run),
-      /Kept .*copilot\.cmd.*because Copilot was not found/,
+      new RegExp(`Kept .*${wrappers[0].replace('.', '\\.')}.*because Copilot was not found`),
       run.stdout,
     );
-    assert.ok(
-      existsSync(join(ctx.workspace, '.maxstack', 'bin', 'copilot.cmd')),
-      'the recorded Copilot wrapper was removed for a Copilot that was only missing on this run',
-    );
-    assert.ok(
-      existsSync(join(ctx.workspace, '.maxstack', 'bin', 'copilot.sh')),
-      'the recorded Copilot script was removed for a Copilot that was only missing on this run',
-    );
+    for (const name of wrappers) {
+      assert.ok(
+        existsSync(join(ctx.workspace, '.maxstack', 'bin', name)),
+        `the recorded Copilot wrapper ${name} was removed for a Copilot that was only missing on this run`,
+      );
+    }
 
     const lock = readJson(join(ctx.workspace, 'stack.lock.json'));
     assert.equal(
@@ -998,14 +1012,12 @@ withWorkspace(
       true,
       'the lock dropped the Copilot wrappers it still holds',
     );
-    assert.ok(
-      ownedRecord(lock, '.maxstack/bin/copilot.cmd', 'file'),
-      'the lock no longer owns the kept Copilot wrapper',
-    );
-    assert.ok(
-      ownedRecord(lock, '.maxstack/bin/copilot.sh', 'file'),
-      'the lock no longer owns the kept Copilot script',
-    );
+    for (const name of wrappers) {
+      assert.ok(
+        ownedRecord(lock, `.maxstack/bin/${name}`, 'file'),
+        `the lock no longer owns the kept Copilot wrapper ${name}`,
+      );
+    }
     assert.ok(
       lock.layers.every((record) => record.opencode.enabled),
       'the OpenCode runtimes still install',
@@ -1018,14 +1030,22 @@ withWorkspace(
   'copilot never wraps the generated wrapper itself',
   (ctx) => {
     const bin = join(ctx.workspace, '.maxstack', 'bin');
-    writeFile(bin, 'copilot.cmd', '@echo off\r\necho self\r\n');
-    const run = mustApply(ctx, ['-CopilotCommand', join(bin, 'copilot.cmd')]);
+    const name = process.platform === 'win32' ? 'copilot.cmd' : 'copilot.sh';
+    writeFile(
+      bin,
+      name,
+      process.platform === 'win32' ? '@echo off\r\necho self\r\n' : '#!/bin/sh\necho self\n',
+    );
+    const run = mustApply(ctx, ['-CopilotCommand', join(bin, name)]);
     assert.match(plainOutput(run), /Copilot CLI not found/);
     assert.ok(
-      existsSync(join(bin, 'copilot.cmd')),
+      existsSync(join(bin, name)),
       'an unrecorded file was deleted: only a file that matches its record is removed',
     );
-    assert.match(plainOutput(run), /Kept .*copilot.cmd: it is not the installer's recorded copy/);
+    assert.match(
+      plainOutput(run),
+      new RegExp(`Kept .*${name.replace('.', '\\.')}: it is not the installer's recorded copy`),
+    );
   },
   {},
 );
@@ -1044,16 +1064,20 @@ withWorkspace(
         record.opencode.agents,
       ]);
     assert.deepEqual(trees(second), trees(first));
-    assert.equal(second.copilot.cmdSha256, first.copilot.cmdSha256);
+    const copilotKey = process.platform === 'win32' ? 'cmdSha256' : 'shSha256';
+    assert.equal(second.copilot[copilotKey], first.copilot[copilotKey]);
     assert.ok(isLink(join(ctx.workspace, '.claude', 'plugins', 'org-ai-plugin')));
 
     const audit = runInstaller(shell, ctx, [], { apply: false });
     assert.equal(audit.status, 0, audit.stderr);
     const drift = driftLines(audit);
-    // config, three Claude children, three OpenCode folders, the two Copilot wrappers, the two
-    // Pi wrappers, and the Pi settings.
+    // config, three Claude children, three OpenCode folders, the Copilot and Pi wrappers, and the
+    // Pi settings. On POSIX the plan still names the .cmd wrappers, which are never written.
     assert.equal(drift.length, 12, audit.stdout);
-    for (const line of drift) assert.match(line, /: (?:matching|matches)$/, line);
+    for (const line of drift) {
+      if (process.platform !== 'win32' && /\.cmd: missing$/.test(line)) continue;
+      assert.match(line, /: (?:matching|matches)$/, line);
+    }
   },
   {},
 );
@@ -1080,7 +1104,7 @@ withWorkspace(
     assert.notEqual(run.status, 0);
     assert.match(
       plainOutput(run),
-      /is the Claude plugin 'org-ai-plugin' but its \.claude-plugin\\plugin\.json names 'renamed'/,
+      /is the Claude plugin 'org-ai-plugin' but its \.claude-plugin[\\/]plugin\.json names 'renamed'/,
     );
   },
   {},
@@ -1127,10 +1151,10 @@ withWorkspace(
 
     const audit = runInstaller(shell, ctx, [], { apply: false });
     assert.equal(audit.status, 0, audit.stderr);
-    assert.match(audit.stdout, /Drift: +.*plugins\\hand-made: stale/, audit.stdout);
+    assert.match(audit.stdout, /Drift: +.*plugins[\\/]hand-made: stale/, audit.stdout);
 
     const run = mustApply(ctx);
-    assert.match(run.stdout, /Drift: +.*plugins\\hand-made: stale, kept/);
+    assert.match(run.stdout, /Drift: +.*plugins[\\/]hand-made: stale, kept/);
     assert.equal(
       readFileSync(join(handMade, 'notes.txt'), 'utf8'),
       'not the installer\n',
@@ -1140,7 +1164,7 @@ withWorkspace(
   {},
 );
 
-withWorkspace(
+withWindowsWorkspace(
   'pi.cmd sets the agent folder, runs the Pi CLI with the arguments, and honours MAXSTACK_PI_BIN',
   (ctx) => {
     mustApply(ctx);
@@ -1184,7 +1208,7 @@ withWorkspace(
 
 // cmd's call doubles carets and eats a percent sign before the target sees them, so only a
 // .cmd or .bat target may go through call. node.exe stands in for an .exe target here.
-withWorkspace(
+withWindowsWorkspace(
   'pi.cmd passes arguments to an .exe target unchanged',
   (ctx) => {
     mustApply(ctx);
@@ -1467,11 +1491,16 @@ withWorkspace(
     ]);
     assert.equal(run.status, 0, plainOutput(run));
     assert.match(run.stdout, /INCOMPLETE: selected runtime wrappers were skipped:/);
-    assert.match(run.stdout, /pi: \.maxstack\/bin\/pi\.cmd, \.maxstack\/bin\/pi\.sh/);
-    assert.match(
-      run.stdout,
-      /copilot: \.maxstack\/bin\/copilot\.cmd, \.maxstack\/bin\/copilot\.sh/,
-    );
+    const expectedPi =
+      process.platform === 'win32'
+        ? /pi: \.maxstack\/bin\/pi\.cmd, \.maxstack\/bin\/pi\.sh/
+        : /pi: \.maxstack\/bin\/pi\.sh/;
+    const expectedCopilot =
+      process.platform === 'win32'
+        ? /copilot: \.maxstack\/bin\/copilot\.cmd, \.maxstack\/bin\/copilot\.sh/
+        : /copilot: \.maxstack\/bin\/copilot\.sh/;
+    assert.match(run.stdout, expectedPi);
+    assert.match(run.stdout, expectedCopilot);
     const strict = runInstaller(shell, ctx, [
       '-PiCommand',
       MISSING_PI,
@@ -1496,15 +1525,17 @@ test(
   'a Pi installed under the workspace is found with none on PATH, and its wrappers survive a run without it',
   { skip },
   async (t) => {
-    await t.test('(a) apply writes both wrappers pointing at the workspace-local Pi', () =>
+    await t.test('(a) apply writes the wrappers pointing at the workspace-local Pi', () =>
       withFreshWorkspace((ctx) => {
         const stub = writeLocalPi(ctx);
         const run = mustApply(ctx, ['-PiCommand', MISSING_PI]);
         assert.doesNotMatch(plainOutput(run), /Pi CLI not found/, run.stdout);
-        assert.ok(
-          wrapperText(ctx, 'pi.cmd').includes(`set "PI_BIN=${stub}"`),
-          'pi.cmd does not name the workspace-local Pi',
-        );
+        if (process.platform === 'win32') {
+          assert.ok(
+            wrapperText(ctx, 'pi.cmd').includes(`set "PI_BIN=${stub}"`),
+            'pi.cmd does not name the workspace-local Pi',
+          );
+        }
         assert.ok(
           wrapperText(ctx, 'pi.sh').includes(stub.replaceAll('\\', '/')),
           'pi.sh does not name the workspace-local Pi',
@@ -1516,25 +1547,19 @@ test(
       withFreshWorkspace((ctx) => {
         writeLocalPi(ctx);
         mustApply(ctx, ['-PiCommand', MISSING_PI]);
-        const before = {
-          cmd: wrapperText(ctx, 'pi.cmd'),
+        const read = () => ({
+          cmd: process.platform === 'win32' ? wrapperText(ctx, 'pi.cmd') : null,
           sh: wrapperText(ctx, 'pi.sh'),
           lock: withoutTimestamp(readJson(lockPath(ctx))),
-        };
+        });
+        const before = read();
         const run = mustApply(ctx, ['-PiCommand', MISSING_PI]);
         assert.doesNotMatch(
           plainOutput(run),
           /Removed the stale wrapper|Kept .*pi\.cmd/,
           run.stdout,
         );
-        assert.deepEqual(
-          {
-            cmd: wrapperText(ctx, 'pi.cmd'),
-            sh: wrapperText(ctx, 'pi.sh'),
-            lock: withoutTimestamp(readJson(lockPath(ctx))),
-          },
-          before,
-        );
+        assert.deepEqual(read(), before);
       }),
     );
 
@@ -1542,18 +1567,24 @@ test(
       withFreshWorkspace((ctx) => {
         const stub = writeLocalPi(ctx);
         mustApply(ctx, ['-PiCommand', MISSING_PI]);
-        const before = { cmd: wrapperText(ctx, 'pi.cmd'), sh: wrapperText(ctx, 'pi.sh') };
+        const before = {
+          cmd: process.platform === 'win32' ? wrapperText(ctx, 'pi.cmd') : null,
+          sh: wrapperText(ctx, 'pi.sh'),
+        };
         rmSync(stub);
         const run = mustApply(ctx, ['-PiCommand', MISSING_PI]);
         assert.match(plainOutput(run), /Pi CLI not found/, run.stdout);
-        assert.match(plainOutput(run), /Kept .*pi\.cmd.*because Pi was not found/, run.stdout);
-        assert.equal(wrapperText(ctx, 'pi.cmd'), before.cmd, 'the Pi wrapper changed');
+        assert.match(plainOutput(run), /Kept .*pi\.sh.*because Pi was not found/, run.stdout);
+        if (process.platform === 'win32') {
+          assert.equal(wrapperText(ctx, 'pi.cmd'), before.cmd, 'the Pi wrapper changed');
+          const lock = readJson(lockPath(ctx));
+          assert.ok(
+            ownedRecord(lock, '.maxstack/bin/pi.cmd', 'file'),
+            'the lock dropped the Pi wrapper it recorded',
+          );
+        }
         assert.equal(wrapperText(ctx, 'pi.sh'), before.sh, 'the Pi script changed');
         const lock = readJson(lockPath(ctx));
-        assert.ok(
-          ownedRecord(lock, '.maxstack/bin/pi.cmd', 'file'),
-          'the lock dropped the Pi wrapper it recorded',
-        );
         assert.ok(
           ownedRecord(lock, '.maxstack/bin/pi.sh', 'file'),
           'the lock dropped the Pi script it recorded',
@@ -1577,7 +1608,11 @@ test(
         const run = runStatus(ctx, ['-PiCommand', MISSING_PI]);
         assert.equal(run.status, 0, run.stderr);
         for (const rows of [withStub, statusRows(run)]) {
-          for (const name of ['.maxstack/bin/pi.cmd', '.maxstack/bin/pi.sh']) {
+          const wrappers =
+            process.platform === 'win32'
+              ? ['.maxstack/bin/pi.cmd', '.maxstack/bin/pi.sh']
+              : ['.maxstack/bin/pi.sh'];
+          for (const name of wrappers) {
             assert.deepEqual(
               rows.find((row) => row.label === name),
               { state: 'matching', label: name },
@@ -1704,7 +1739,14 @@ test(
 
       await t.test(
         'the verifier fails when the bit is missing, and passes once it is back',
-        { skip: !python || !posix ? 'needs POSIX and python' : false },
+        {
+          skip:
+            !python || !posix
+              ? 'needs POSIX and python'
+              : process.platform !== 'win32'
+                ? 'the verifier checks a Windows layout'
+                : false,
+        },
         () => {
           chmodSync(join(bin, 'pi.sh'), 0o644);
           const missing = verify();
@@ -1771,10 +1813,14 @@ test(
     try {
       const harness = join(dir, 'harness.ps1');
       writeFileSync(harness, wrapperTargetHarness(WRAPPER_TARGET_CASES));
-      const run = spawnSync(shell, ['-NoProfile', '-NonInteractive', '-File', harness, installer], {
-        windowsHide: true,
-        encoding: 'utf8',
-      });
+      const run = spawnSync(
+        psShell,
+        ['-NoProfile', '-NonInteractive', '-File', harness, installer],
+        {
+          windowsHide: true,
+          encoding: 'utf8',
+        },
+      );
       assert.equal(run.status, 0, `${run.stdout}\n${run.stderr}`);
       const results = JSON.parse(run.stdout);
       for (const [path, windows, accepted] of WRAPPER_TARGET_CASES) {
@@ -1792,8 +1838,8 @@ test(
 );
 
 withWorkspaceNeeding(
-  'python',
-  python,
+  'python on Windows',
+  process.platform === 'win32' ? python : null,
   'the workspace verifier passes after an apply and flags a hand-edited Copilot wrapper',
   (ctx) => {
     mustApply(ctx);
@@ -1831,8 +1877,8 @@ withWorkspaceNeeding(
 // The hash check passes here, because the lock is updated to the edited script. What remains
 // is the folder the script names, which the verifier must compare to the workspace's.
 withWorkspaceNeeding(
-  'python',
-  python,
+  'python on Windows',
+  process.platform === 'win32' ? python : null,
   'the verifier compares the agent folder in pi.sh with the workspace, not just its presence',
   (ctx) => {
     mustApply(ctx);
@@ -1879,8 +1925,8 @@ withWorkspaceNeeding(
 );
 
 withWorkspaceNeeding(
-  'python',
-  python,
+  'python on Windows',
+  process.platform === 'win32' ? python : null,
   'the workspace verifier checks each owned path against the disk and refuses a malformed record',
   (ctx) => {
     mustApply(ctx);
@@ -1930,7 +1976,7 @@ withWorkspace(
   (ctx) => {
     mustApply(ctx);
     const child = join(ctx.workspace, '.claude', 'plugins', 'org-ai-plugin');
-    rmdirSync(child);
+    rmSync(child, { force: true });
     const other = join(ctx.base, 'other-target');
     mkdirSync(other);
     writeFileSync(join(other, 'keep.txt'), 'outside bytes');
@@ -2082,8 +2128,8 @@ withWorkspace(
 );
 
 withWorkspaceNeeding(
-  'python',
-  python,
+  'python on Windows',
+  process.platform === 'win32' ? python : null,
   'the owned list names only selected outputs, and both verifiers accept a partial install',
   (ctx) => {
     mustApply(ctx, ['-Runtimes', 'claude,copilot']);

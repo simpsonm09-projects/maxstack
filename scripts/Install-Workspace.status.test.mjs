@@ -14,7 +14,6 @@ import {
   symlinkSync,
   lstatSync,
   mkdirSync,
-  rmdirSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, parse as parsePath } from 'node:path';
@@ -70,7 +69,9 @@ import {
   statusRows,
   testEnvironment,
   verifyManifestsScript,
+  windowsOnly,
   withMainCommit,
+  withWindowsWorkspace,
   withWorkspace,
   workspaceFiles,
   workspacePath,
@@ -97,7 +98,11 @@ withWorkspace(
 
     assert.equal(lock.workspace, 'simpsonm09', 'the lock names the workspace');
     assert.ok(!raw.includes(ctx.workspace), 'the lock holds no absolute workspace path');
-    assert.ok(!raw.includes(ctx.base), 'the lock holds no temporary path');
+    // The fixture's own git remote is under the temporary root; nothing else may name a temporary path.
+    const withoutFixtureRemote = raw
+      .replaceAll(ctx.fixture.url, '')
+      .replaceAll(ctx.fixture.dir, '');
+    assert.ok(!withoutFixtureRemote.includes(ctx.base), 'the lock holds no temporary path');
     for (const value of stringValues(lock)) {
       assert.doesNotMatch(value, /^[A-Za-z]:[\\/]/, `drive-letter path: ${value}`);
       assert.doesNotMatch(value, /^\//, `absolute path: ${value}`);
@@ -128,15 +133,22 @@ withWorkspace(
       }
     }
     assert.equal(lock.copilot.enabled, true, 'the Copilot wrappers are recorded as written');
-    assert.deepEqual(lock.copilot.wrappers, [
-      '.maxstack/bin/copilot.cmd',
-      '.maxstack/bin/copilot.sh',
-    ]);
-    assert.match(lock.copilot.cmdSha256, /^[0-9A-F]{64}$/);
+    const wrappersFor = (name) =>
+      process.platform === 'win32'
+        ? [`.maxstack/bin/${name}.cmd`, `.maxstack/bin/${name}.sh`]
+        : [`.maxstack/bin/${name}.sh`];
+    assert.deepEqual(lock.copilot.wrappers, wrappersFor('copilot'));
+    assert.match(
+      lock.copilot[process.platform === 'win32' ? 'cmdSha256' : 'shSha256'],
+      /^[0-9A-F]{64}$/,
+    );
     assert.equal(lock.pi.enabled, true, 'the Pi wrappers are recorded as written');
-    assert.deepEqual(lock.pi.wrappers, ['.maxstack/bin/pi.cmd', '.maxstack/bin/pi.sh']);
+    assert.deepEqual(lock.pi.wrappers, wrappersFor('pi'));
     assert.equal(lock.pi.agentDir, '.pi/agent');
-    assert.match(lock.pi.cmdSha256, /^[0-9A-F]{64}$/);
+    assert.match(
+      lock.pi[process.platform === 'win32' ? 'cmdSha256' : 'shSha256'],
+      /^[0-9A-F]{64}$/,
+    );
     assert.ok(!('claudeMarketplaceSha256' in lock), 'the marketplace hash is gone');
     assert.ok(!('claudeSettingsSha256' in lock), 'the settings hash is gone');
   },
@@ -262,7 +274,9 @@ withWorkspace(
         source === 'local:'
           ? /layers\.pstack\.source has an unsafe local path/
           : source === 'local:   '
-            ? /layers\.pstack\.source has a folder name with a trailing dot or space/
+            ? process.platform === 'win32'
+              ? /layers\.pstack\.source has a folder name with a trailing dot or space/
+              : /layers\.pstack\.source has an unsafe local path/
             : /layers\.pstack\.source is not a supported source/;
       assert.match(plainOutput(run), message, source);
       assert.equal(
@@ -406,15 +420,15 @@ withWorkspace(
     for (const child of ['org-ai-plugin', 'personal-ai-plugin', 'pstack']) {
       assert.match(
         before.stdout,
-        new RegExp(`plugins\\\\${child}: missing`),
+        new RegExp(`plugins[\\\\/]${child}: missing`),
         `missing drift for ${child}`,
       );
     }
-    assert.match(before.stdout, /plugins\\pstack: missing/);
+    assert.match(before.stdout, /plugins[\\/]pstack: missing/);
     assert.match(before.stdout, /copilot\.cmd: missing/);
     assert.match(before.stdout, /pi\.cmd: missing/);
     // The pinned cache is not synced until apply, so the settings cannot be checked before it.
-    assert.match(before.stdout, /\.pi\\agent\\settings\.json: unknown until -Apply/);
+    assert.match(before.stdout, /\.pi[\\/]agent[\\/]settings\.json: unknown until -Apply/);
     assert.ok(!existsSync(join(ctx.workspace, '.claude')), 'audit created the Claude folder');
     assert.ok(!existsSync(join(ctx.workspace, '.maxstack')), 'audit created the Copilot folder');
     assert.ok(!existsSync(join(ctx.workspace, 'stack.lock.json')), 'audit wrote the lock');
@@ -432,7 +446,7 @@ withWorkspace(
     appendFileSync(skill, 'hand edit\n');
 
     const drifted = runInstaller(shell, ctx, [], { apply: false });
-    assert.match(drifted.stdout, /plugins\\pstack: differs/);
+    assert.match(drifted.stdout, /plugins[\\/]pstack: differs/);
     assert.match(readFileSync(skill, 'utf8'), /hand edit/, 'audit changed the drifted file');
 
     mustApply(ctx);
@@ -462,7 +476,13 @@ withWorkspace(
       owned.find((record) => record.path === '.opencode/plugins/org-ai-plugin').layers,
       ['org-ai-plugin'],
     );
-    assert.equal(owned.find((record) => record.path === '.maxstack/bin/pi.cmd').runtime, 'pi');
+    assert.equal(
+      owned.find(
+        (record) =>
+          record.path === `.maxstack/bin/${process.platform === 'win32' ? 'pi.cmd' : 'pi.sh'}`,
+      ).runtime,
+      'pi',
+    );
     assert.equal(
       owned.find((record) => record.path === '.claude/cache/pstack').runtime,
       null,
@@ -498,7 +518,11 @@ withWorkspace(
         `the profile ${agent}`,
       );
     }
-    for (const wrapper of ['copilot.cmd', 'copilot.sh', 'pi.cmd', 'pi.sh']) {
+    const wrappers =
+      process.platform === 'win32'
+        ? ['copilot.cmd', 'copilot.sh', 'pi.cmd', 'pi.sh']
+        : ['copilot.sh', 'pi.sh'];
+    for (const wrapper of wrappers) {
       assert.match(
         find(`.maxstack/bin/${wrapper}`, 'file').sha256,
         /^[0-9A-F]{64}$/,
@@ -520,7 +544,7 @@ withWorkspace(
     );
     assert.equal(
       owned.length,
-      17,
+      process.platform === 'win32' ? 17 : 15,
       'one record per path the install wrote; the two Pi lists hold one record each',
     );
     for (const name of readdirSync(join(ctx.workspace, '.maxstack', 'bin'))) {
@@ -562,13 +586,19 @@ withWorkspace(
 
     const run = runStatus(ctx);
     assert.equal(run.status, 0, `${run.stdout}\n${run.stderr}`);
-    assert.equal(statusRows(run).length, 19, run.stdout);
+    const expectedRows = process.platform === 'win32' ? 19 : 17;
+    assert.equal(statusRows(run).length, expectedRows, run.stdout);
     assert.deepEqual(
       [...new Set(statusRows(run).map((row) => row.state))],
       ['matching'],
       run.stdout,
     );
-    assert.match(run.stdout, /Summary: 19 matching, 0 drifted, 0 modified, 0 missing, 0 untracked/);
+    assert.match(
+      run.stdout,
+      new RegExp(
+        `Summary: ${expectedRows} matching, 0 drifted, 0 modified, 0 missing, 0 untracked`,
+      ),
+    );
     assert.equal(runStatus(ctx, ['-Strict']).status, 0, '-Strict failed on a matching workspace');
 
     assert.equal(readFileSync(lockPath(ctx), 'utf8'), lockBefore, 'status rewrote the lock');
@@ -585,12 +615,16 @@ withWorkspace(
   'status reports a hand-edited file as modified, and -Strict fails on it',
   (ctx) => {
     mustApply(ctx);
-    appendFileSync(join(ctx.workspace, '.maxstack', 'bin', 'copilot.cmd'), 'rem hand edit\r\n');
+    const wrapper = process.platform === 'win32' ? 'copilot.cmd' : 'copilot.sh';
+    appendFileSync(
+      join(ctx.workspace, '.maxstack', 'bin', wrapper),
+      process.platform === 'win32' ? 'rem hand edit\r\n' : '# hand edit\n',
+    );
     const run = runStatus(ctx);
     assert.equal(run.status, 0, run.stderr);
     assert.deepEqual(
       problemRows(run),
-      [{ state: 'modified', label: '.maxstack/bin/copilot.cmd' }],
+      [{ state: 'modified', label: `.maxstack/bin/${wrapper}` }],
       run.stdout,
     );
     assert.equal(runStatus(ctx, ['-Strict']).status, 1, '-Strict accepted a modified file');
@@ -725,7 +759,7 @@ withWorkspace(
 
 test(
   'finding F3: OpenCode permissions are generated for each workspace and remain owned by the lock',
-  { skip },
+  { skip: windowsOnly },
   () => {
     const first = buildWorkspace();
     const second = buildWorkspace();
@@ -974,7 +1008,11 @@ withWorkspace(
         `the tree hash of ${folder}`,
       );
     }
-    for (const wrapper of ['copilot.cmd', 'copilot.sh', 'pi.cmd', 'pi.sh']) {
+    const wrappers =
+      process.platform === 'win32'
+        ? ['copilot.cmd', 'copilot.sh', 'pi.cmd', 'pi.sh']
+        : ['copilot.sh', 'pi.sh'];
+    for (const wrapper of wrappers) {
       assert.equal(
         ownedRecord(lock, `.maxstack/bin/${wrapper}`, 'file').sha256,
         sha256Upper(readFileSync(at(`.maxstack/bin/${wrapper}`))),
@@ -1007,7 +1045,7 @@ withWorkspace(
     const child = join(ctx.workspace, ...linkPath.split('/'));
     const alternate = join(ctx.workspace, '.opencode', 'plugins', 'status-target');
     mkdirSync(alternate);
-    rmdirSync(child);
+    rmSync(child, { force: true });
     symlinkSync(alternate, child, 'junction');
     const lock = readJson(lockPath(ctx));
     lock.owned.find((record) => record.path === linkPath).target =
@@ -1610,7 +1648,7 @@ withWorkspace(
   NPM,
 );
 
-withWorkspace(
+withWindowsWorkspace(
   'a drive root or a share root is refused as a local source, with the reason',
   (ctx) => {
     const driveRoot = parsePath(tmpdir()).root;
@@ -1649,7 +1687,7 @@ test(
       assertOk(run);
       assert.equal(run.stdout.trim(), SHORTHAND_URL, run.stdout);
     } finally {
-      rmdirSync(junction);
+      rmSync(junction, { force: true });
     }
   },
   {},
@@ -1690,7 +1728,7 @@ withWorkspace(
 );
 
 // Finding 6: a long-path prefix is dropped only from a drive path. \\?\UNC\server\share names a share, and stays one.
-withWorkspace(
+withWindowsWorkspace(
   'a long-path UNC share is refused as a share root, not read as a folder under the current directory',
   (ctx) => {
     const run = runInstaller(

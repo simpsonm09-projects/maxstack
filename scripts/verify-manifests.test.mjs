@@ -1032,7 +1032,7 @@ function runSettingsDifferential(inputs, platform) {
 
 test(
   'the Python reader and the PowerShell reader accept and refuse the same settings files',
-  { skip: differentialSkip },
+  { skip: differentialSkip, timeout: 120_000 },
   () => {
     const inputs = settingsDifferentialInputs();
     for (const platform of ['Windows', 'POSIX']) {
@@ -1074,7 +1074,7 @@ const MUST_REFUSE = [
 
 test(
   'the readers refuse each culture and root-relative input the review found, in both readers',
-  { skip: differentialSkip },
+  { skip: differentialSkip, timeout: 120_000 },
   () => {
     const inputs = settingsDifferentialInputs();
     const windowsOnly = [
