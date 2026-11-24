@@ -24,7 +24,7 @@ The PStack layer is a git source. The org and personal layers are local checkout
 
 ## The cross-repo edge
 
-`scripts/Install-Workspace.ps1` reads `layers.json` in `maxstack`. The machine tool list, `tools.yaml`, lived in `dev-setup` and lives in the `sakuragaoka-homelab` machine repositories now. The two manifests never read each other. They meet at the workspace, where `maxstack` writes the AI config and the machine repositories install the tools a person runs there. A change to the layer order belongs in `maxstack`; a change to the machine tool set belongs in the `sakuragaoka-homelab` machine repositories.
+The installer in `scripts/install/` reads `layers.json` in `maxstack`. The machine tool list, `tools.yaml`, lived in `dev-setup` and lives in the `sakuragaoka-homelab` machine repositories now. The two manifests never read each other. They meet at the workspace, where `maxstack` writes the AI config and the machine repositories install the tools a person runs there. A change to the layer order belongs in `maxstack`; a change to the machine tool set belongs in the `sakuragaoka-homelab` machine repositories.
 
 ## The agent tool check
 

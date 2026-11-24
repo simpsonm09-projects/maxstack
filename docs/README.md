@@ -7,7 +7,7 @@ Index for this repository.
 - [Pi update compatibility](release-notes/2026-10-21-pi-update-compatibility.md) describes the managed Pi wrapper's `update --self` behavior and safety checks.
 - [Install and reload](install.md) covers the model rule, the runtime and layer selection, the runtimes, layer sources and their overrides, `-Update`, the ownership record, removing a runtime or layer, and uninstalling.
 - [T3 settings snapshot](features/t3-settings.md) documents the explicit source, allowlisted workspace snapshot, and read-only drift report.
-- [Workspace settings](features/settings.md) describes workspace discovery and the optional selection file's additive behavior. Discovery is implemented in `scripts/Install-WorkspaceDiscovery.ps1` and tested by `scripts/Install-WorkspaceDiscovery.test.mjs`.
+- [Workspace settings](features/settings.md) describes workspace discovery and the optional selection file's additive behavior. Discovery is implemented in `scripts/install/discovery.ts` and tested by `scripts/Install-WorkspaceDiscovery.test.mjs`.
 - [Current alignment](features/current-alignment.md) records the verified delivery state and the remaining acceptance work against the end goal.
 - [Antigravity skills](features/antigravity.md) documents the opt-in Antigravity runtime and its shared skill ownership.
 - [Codex discovery check](features/codex-discovery-check.md) describes the local marker acceptance tool and its limits.

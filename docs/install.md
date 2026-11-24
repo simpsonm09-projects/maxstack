@@ -1,12 +1,12 @@
 # Install and reload
 
-> **Requires PowerShell 7 or later (`pwsh`) on Linux.** `scripts/Install-Workspace.ps1` declares `#requires -Version 7.0`. Every installer command in this document is written as `pwsh -File`.
+> **Runs on Bun, on Linux.** The installer is `scripts/install/main.ts`; every installer command in this document is written as `just install-workspace`.
 
 ## Workspace discovery
 
 ## Platforms
 
-Linux is the only supported platform (C5.6). The `test-linux` job in the `portable` workflow runs the POSIX installer fixture lifecycle for Claude, OpenCode, Copilot, Pi, Codex, Cursor, and Antigravity on `ubuntu-24.04` outside the required `test` and `test-node` jobs. It verifies installer output, strict status, runtime removal, and uninstall; it does not exercise installed CLIs or their hooks. The Codex, Cursor, and Antigravity fixture declarations are opt-in test data; the shipped layers currently declare Claude, OpenCode, Copilot, and Pi only. Installs write only POSIX wrappers (`copilot.sh`, and `pi.sh` when Pi is selected), and Claude plugin folders use directory symlinks, with link-safe ownership, hashing, status, replacement, and removal.
+Linux is the only supported platform (C5.6). The `test-linux` job in the `portable` workflow runs the installer fixture lifecycle under Bun for Claude, OpenCode, Copilot, Pi, Codex, Cursor, and Antigravity on `ubuntu-24.04` outside the required `test` and `test-node` jobs. It verifies installer output, strict status, runtime removal, and uninstall; it does not exercise installed CLIs or their hooks. The Codex, Cursor, and Antigravity fixture declarations are opt-in test data; the shipped layers currently declare Claude, OpenCode, Copilot, and Pi only. Installs write only POSIX wrappers (`copilot.sh`, and `pi.sh` when Pi is selected), and Claude plugin folders use directory symlinks, with link-safe ownership, hashing, status, replacement, and removal.
 
 The installer resolves its target in this order: `-Workspace`, `MAXSTACK_WORKSPACE`, the nearest folder from the current directory upward that holds a `maxstack.settings.json` or `stack.lock.json` file, then the script's own `projects/repos/<repo>/scripts` or `projects/worktrees/<repo>/scripts` location. If none names a workspace, it stops and lists these four choices. It prints the resolved absolute path and origin on the first line of a successful run.
 
@@ -16,33 +16,32 @@ Device prefixes (`\\?\` and `\\.\`), UNC paths (`\\server\share`), 8.3 short nam
 
 ## New workspace
 
-You need PowerShell 7, Git, Node.js and npm. The first apply needs network access to fetch the pinned PStack source and install npm dependencies for layers that have a `package.json`. Each such layer can add about 140 MB under `.opencode/plugins/<layer>/node_modules`; npm runs with `--ignore-scripts`.
+You need Bun 1.4.5 through `just`, Git, Node.js and npm. The first apply needs network access to fetch the pinned PStack source and install npm dependencies for layers that have a `package.json`. Each such layer can add about 140 MB under `.opencode/plugins/<layer>/node_modules`; npm runs with `--ignore-scripts`.
 
 Choose an empty workspace folder and clone the two local layers to the paths declared in `layers.json`. The installer fetches PStack itself at the recorded commit from [pstack-max, our fork of pstack-claude](https://github.com/simpsonm09/pstack-max).
 
-```powershell
-$Workspace = '<absolute workspace path>'
-New-Item -ItemType Directory -Force -Path $Workspace | Out-Null
-New-Item -ItemType Directory -Force -Path (Join-Path $Workspace 'projects/repos') | Out-Null
-git clone https://github.com/simpsonm09-projects/org-ai-plugin.git (Join-Path $Workspace 'projects/repos/org-ai-plugin')
-git clone https://github.com/simpsonm09-projects/personal-ai-plugin.git (Join-Path $Workspace 'projects/repos/personal-ai-plugin')
-npm install --prefix (Join-Path $Workspace '.maxstack/npm') '@earendil-works/pi-coding-agent'
-$PiCommand = Join-Path $Workspace '.maxstack/npm/node_modules/.bin/pi'
+```bash
+Workspace='<absolute workspace path>'
+mkdir -p "$Workspace/projects/repos"
+git clone https://github.com/simpsonm09-projects/org-ai-plugin.git "$Workspace/projects/repos/org-ai-plugin"
+git clone https://github.com/simpsonm09-projects/personal-ai-plugin.git "$Workspace/projects/repos/personal-ai-plugin"
+npm install --prefix "$Workspace/.maxstack/npm" '@earendil-works/pi-coding-agent'
+PiCommand="$Workspace/.maxstack/npm/node_modules/.bin/pi"
 
-pwsh -File scripts/Install-Workspace.ps1 -Workspace $Workspace
-pwsh -File scripts/Install-Workspace.ps1 -Workspace $Workspace -Apply
-pwsh -File scripts/Install-Workspace.ps1 -Workspace $Workspace -Runtimes all -PiCommand $PiCommand -Apply
-pwsh -File scripts/Install-Workspace.ps1 -Workspace $Workspace -Status -Strict
-pwsh -File scripts/Install-Workspace.ps1 -Workspace $Workspace -Apply
-pwsh -File scripts/Install-Workspace.ps1 -Workspace $Workspace -Remove -Runtimes pi -Apply
-pwsh -File scripts/Install-Workspace.ps1 -Workspace $Workspace -Runtimes pi -PiCommand $PiCommand -Apply
-pwsh -File scripts/Install-Workspace.ps1 -Workspace $Workspace -Uninstall
-pwsh -File scripts/Install-Workspace.ps1 -Workspace $Workspace -Uninstall -Apply
+just install-workspace -Workspace "$Workspace"
+just install-workspace -Workspace "$Workspace" -Apply
+just install-workspace -Workspace "$Workspace" -Runtimes all -PiCommand "$PiCommand" -Apply
+just install-workspace -Workspace "$Workspace" -Status -Strict
+just install-workspace -Workspace "$Workspace" -Apply
+just install-workspace -Workspace "$Workspace" -Remove -Runtimes pi -Apply
+just install-workspace -Workspace "$Workspace" -Runtimes pi -PiCommand "$PiCommand" -Apply
+just install-workspace -Workspace "$Workspace" -Uninstall
+just install-workspace -Workspace "$Workspace" -Uninstall -Apply
 ```
 
 If Pi is not installed, the apply still installs the selected layers and settings, but reports that its wrappers were skipped. Install Pi, then rerun the Pi apply with `-PiCommand <path>`; the flag chooses the executable the wrappers run. The `-Status -Strict` step should exit 0 only when every selected output matches.
 
-After install, create the T3 instances from the instructions in [T3 setup](t3-setup.md): [OpenCode](t3-setup.md#opencode), [Claude](t3-setup.md#claude-code), [Copilot](t3-setup.md#copilot), [Pi](t3-setup.md#pi-maxstack), and [Codex](t3-setup.md#codex-maxstack). Use the actual `$Workspace` path in each instance. Pi needs a Pi CLI installed in the workspace or available by `-PiCommand`; use `/login` once in Pi. Restart the OpenCode server after each install before starting a new T3 session.
+After install, create the T3 instances from the instructions in [T3 setup](t3-setup.md): [OpenCode](t3-setup.md#opencode), [Claude](t3-setup.md#claude-code), [Copilot](t3-setup.md#copilot), [Pi](t3-setup.md#pi-maxstack), and [Codex](t3-setup.md#codex-maxstack). Use the actual workspace path in each instance. Pi needs a Pi CLI installed in the workspace or available by `-PiCommand`; use `/login` once in Pi. Restart the OpenCode server after each install before starting a new T3 session.
 
 Add the generated paths to the workspace `.gitignore`; the installer does not edit that file:
 
@@ -80,12 +79,12 @@ T3 Code hosts the agent sessions. It runs four plugin providers against the same
 
 An optional [`maxstack.settings.json`](features/settings.md) beside `stack.lock.json` can declare runtime and layer selections. Its names add to the recorded selection. Omitted names stay selected until removed with `-Remove`. On a new workspace, a dimension named in the settings file selects exactly those names. `-Remove` warns about each removed name the file still lists, since the next apply selects it again. See [Workspace settings](features/settings.md) for its schema and reserved fields.
 
-The workspace installs only the runtimes and layers it selects. `-Runtimes` names runtimes: `claude`, `opencode`, `copilot`, `pi`, `codex`, `cursor`, `antigravity`, or `all`. `-Layers` names layers by their names in `layers.json`, or `all`. Both take comma-separated values, which `pwsh -File` passes as one token:
+The workspace installs only the runtimes and layers it selects. `-Runtimes` names runtimes: `claude`, `opencode`, `copilot`, `pi`, `codex`, `cursor`, `antigravity`, or `all`. `-Layers` names layers by their names in `layers.json`, or `all`. Both take comma-separated values, which `just` passes as one token:
 
-```powershell
-pwsh -File scripts/Install-Workspace.ps1 -Runtimes claude,copilot -Apply
-pwsh -File scripts/Install-Workspace.ps1 -Runtimes pi -Apply
-pwsh -File scripts/Install-Workspace.ps1 -Layers pstack -Apply
+```bash
+just install-workspace -Runtimes claude,copilot -Apply
+just install-workspace -Runtimes pi -Apply
+just install-workspace -Layers pstack -Apply
 ```
 
 The selection is recorded in `stack.lock.json`, with each list sorted:
@@ -149,8 +148,8 @@ An unselected runtime's files are left alone. An apply does not write, remove, o
 
 PStack is not checked out in the workspace. The installer fetches the `plugins/pstack` folder of the fork at the commit in `pstack.lock.json`, into `.claude/cache/pstack`, and checks that commit out. A cache already at the commit is reused without a network call. The org and personal layers are read from their checkouts under `projects/repos`.
 
-```powershell
-pwsh -File scripts/Install-Workspace.ps1 -Apply
+```bash
+just install-workspace -Apply
 ```
 
 After an install, restart the running OpenCode server, then start a new session in T3. T3 can reuse a long-lived server across sessions, and that server does not reliably reload plugins or skills after reinstall. Claude Code reads its `.claude/plugins` folder when a session starts. Copilot reads its plugin folders when it starts.
@@ -176,7 +175,7 @@ With `codex` or `antigravity` selected, the installer copies each selected layer
 
 ## Copilot CLI
 
-`Install-Workspace.ps1` writes `copilot.sh` into `.maxstack/bin`. It runs the Copilot CLI with one `--plugin-dir` for each layer that lists the `copilot` runtime, in layer order, then passes its arguments through. The plugin folders are the `.claude/plugins` folders above; no second copy is made.
+The installer writes `copilot.sh` into `.maxstack/bin`. It runs the Copilot CLI with one `--plugin-dir` for each layer that lists the `copilot` runtime, in layer order, then passes its arguments through. The plugin folders are the `.claude/plugins` folders above; no second copy is made.
 
 The installer finds the Copilot executable with `Get-Command copilot`. It never uses a match inside `.maxstack/bin`. The wrapper resolves the executable from `PATH` at run time. If Copilot is not found on this run, the installer keeps the wrapper the lock records, as it is on disk, and warns that it was kept. It never removes it only because Copilot is missing: a wrapper goes only when no layer declares `copilot`, or when the runtime is removed with `-Remove`, and the lock records it with its hash. With no recorded wrapper, it skips it with a message. Either way it still installs everything else. Install Copilot, then run the installer with `-Apply` again. The wrapper runs the Claude plugin folders, so `copilot` needs `claude` selected.
 
@@ -184,7 +183,7 @@ To test the wrapper without an install, pass a different executable: `-CopilotCo
 
 ## Pi
 
-`Install-Workspace.ps1` writes `.maxstack/bin/pi.sh` and `.pi/agent/settings.json`. The wrapper sets `PI_CODING_AGENT_DIR` to `.pi/agent`. At install time, `-PiCommand <path>` chooses the Pi CLI to wrap, beside `-CopilotCommand <path>` for Copilot. Without it, the installer checks the workspace Pi copy, `.maxstack/npm/node_modules/.bin/pi`, then the first `pi` on `PATH` outside `.maxstack/bin`. `MAXSTACK_PI_BIN` is read by the wrapper at run time; the installer does not read it. `pi.sh` runs the workspace copy when that was selected; with a PATH Pi, `pi.sh` resolves PATH at run time. The wrapper bakes absolute paths to the agent folder and executable. After the workspace or Pi moves, rerun the installer. If Pi is missing, the installer prints a final incomplete-runtime summary; default exit remains 0, and `-Strict` exits 1. A wrapper is removed only when the lock records it, its hash matches, and no layer declares `pi`. Settings hold `packages` and `skills` lists; the installer owns only the entries it wrote under those keys. User values such as `defaultProvider` or `defaultModel` stay, and maxstack writes no model or provider. A layer is a Pi package when its root `package.json` has a `pi` key. For a local source, Pi uses that repository-root package; skills still point to the installed Claude plugin folders. Pi lists those folders, so `pi` needs `claude` selected. See [T3 setup](t3-setup.md#pi-maxstack).
+The installer writes `.maxstack/bin/pi.sh` and `.pi/agent/settings.json`. The wrapper sets `PI_CODING_AGENT_DIR` to `.pi/agent`. At install time, `-PiCommand <path>` chooses the Pi CLI to wrap, beside `-CopilotCommand <path>` for Copilot. Without it, the installer checks the workspace Pi copy, `.maxstack/npm/node_modules/.bin/pi`, then the first `pi` on `PATH` outside `.maxstack/bin`. `MAXSTACK_PI_BIN` is read by the wrapper at run time; the installer does not read it. `pi.sh` runs the workspace copy when that was selected; with a PATH Pi, `pi.sh` resolves PATH at run time. The wrapper bakes absolute paths to the agent folder and executable. After the workspace or Pi moves, rerun the installer. If Pi is missing, the installer prints a final incomplete-runtime summary; default exit remains 0, and `-Strict` exits 1. A wrapper is removed only when the lock records it, its hash matches, and no layer declares `pi`. Settings hold `packages` and `skills` lists; the installer owns only the entries it wrote under those keys. User values such as `defaultProvider` or `defaultModel` stay, and maxstack writes no model or provider. A layer is a Pi package when its root `package.json` has a `pi` key. For a local source, Pi uses that repository-root package; skills still point to the installed Claude plugin folders. Pi lists those folders, so `pi` needs `claude` selected. See [T3 setup](t3-setup.md#pi-maxstack).
 
 ### Update Pi
 
@@ -197,9 +196,9 @@ argument (including an empty argument) follows `--self`. When the selected Pi is
 its path and refuses the update without running npm. Run the installer from the maxstack checkout to audit an update or
 pin a version:
 
-  ```powershell
-  pwsh -File scripts/Install-Workspace.ps1 -Workspace <workspace> -UpdatePi
-  pwsh -File scripts/Install-Workspace.ps1 -Workspace <workspace> -UpdatePi -Apply
+  ```bash
+  just install-workspace -Workspace <workspace> -UpdatePi
+  just install-workspace -Workspace <workspace> -UpdatePi -Apply
   ```
 
 The first command audits the update. The second applies it. Pin a version with `-PiVersion <version>`, for example
@@ -210,15 +209,15 @@ initial npm install normally saves a caret range. An exact pin means npm used `s
 saved, or the range was set explicitly. Updating Pi does not require another installer apply. Its wrapper paths and
 `.pi\agent\settings.json` do not depend on the Pi version.
 
-The wrapper always selects `latest`; use `-PiVersion <version>` with `Install-Workspace.ps1 -UpdatePi -Apply` when you
+The wrapper always selects `latest`; use `-PiVersion <version>` with `just install-workspace -UpdatePi -Apply` when you
 need a pinned installer update.
 
 ## Audit and apply
 
 Audit mode is the default. It prints one `Drift:` line for each thing the installer would change, and writes nothing:
 
-```powershell
-pwsh -File scripts/Install-Workspace.ps1
+```bash
+just install-workspace
 ```
 
 `-Apply` makes the changes. Each runtime is written in this order: the config, the OpenCode folders and agent profiles, the Claude folders, then the Copilot wrappers. A git source is fetched before anything is written, so a commit the fork cannot supply stops the run with the workspace unchanged.
@@ -231,10 +230,10 @@ A layer that stops naming a runtime leaves its folder behind. `-Apply` removes a
 
 A layer installs from one source. `layers.json` gives each layer its default source: `pstack` is a git pin with a commit, and the org and personal layers are local checkouts. `-Source` changes one layer's source for a run, and the lock records the change. Each `-Source` entry is `name=spec`, and the entries may be repeated or comma-separated:
 
-```powershell
-pwsh -File scripts/Install-Workspace.ps1 -Source pstack=simpsonm09/pstack-max@feat/opencode-runtime -Apply
-pwsh -File scripts/Install-Workspace.ps1 -Source personal-ai-plugin=local:<absolute path> -Apply
-pwsh -File scripts/Install-Workspace.ps1 -Source pstack=default -Apply
+```bash
+just install-workspace -Source pstack=simpsonm09/pstack-max@feat/opencode-runtime -Apply
+just install-workspace -Source personal-ai-plugin=local:<absolute path> -Apply
+just install-workspace -Source pstack=default -Apply
 ```
 
 The spec forms:
@@ -254,9 +253,9 @@ A read-only audit skips a layer whose declared source is unavailable, and says s
 
 Seed a settings file from the lock's recorded selection and source overrides. The dry run prints the JSON and writes nothing:
 
-```powershell
-pwsh -File scripts/Install-Workspace.ps1 -InitSettings
-pwsh -File scripts/Install-Workspace.ps1 -InitSettings -Apply
+```bash
+just install-workspace -InitSettings
+just install-workspace -InitSettings -Apply
 ```
 
 `-InitSettings` requires an existing `stack.lock.json`. For a first workspace, copy `workspace/maxstack.settings.json` into the workspace, or run `-Apply` first to create the lock. The refusal is intentional because no selection or source can be derived without the lock.
@@ -311,10 +310,10 @@ Every override, every local source, and every branch or tag override is listed. 
 
 `-Update` re-resolves each selected layer's recorded source. A branch or tag override moves to its current commit, and the layer records that commit. A commit pin stays as it is, and so does a `layers.json` pin. A local source is read again. The recorded selection applies, so `-Update` takes no `-Runtimes`, `-Layers`, or `-Source`, and it cannot be combined with `-Remove`, `-Uninstall`, or `-Status`.
 
-```powershell
-pwsh -File scripts/Install-Workspace.ps1 -Update -Check
-pwsh -File scripts/Install-Workspace.ps1 -Update -Check -Strict
-pwsh -File scripts/Install-Workspace.ps1 -Update -Apply
+```bash
+just install-workspace -Update -Check
+just install-workspace -Update -Check -Strict
+just install-workspace -Update -Apply
 ```
 
 Without `-Apply`, `-Update` prints the report and writes nothing. That is already a dry run, so `-Check` only names the report: `-Update` alone prints the same report, and `-Check` is accepted only with `-Update` and never with `-Apply`. For each selected layer it prints the old and new commit, the number of files that would change under the layer's folder, and each owned path an apply would rewrite. A commit the cache does not hold is reported as `needs fetch`, and its changed files are known after an apply fetches it. The check reads the cache with `--no-lazy-fetch`, so it never fetches an object into the cache. That flag needs git 2.44 or later. On an older git the report says `changed files unknown` rather than fetch. The count runs with rename detection off, so a partial clone that lacks a blob still gives a count, and a count git cannot read is reported as `changed files unknown`.
@@ -361,9 +360,9 @@ The rule for files the installer generates, stated once. An ownership record cov
 
 `-Status` compares the record with the disk and with what an apply would write. It writes nothing. It prints one line per path, then a summary:
 
-```powershell
-pwsh -File scripts/Install-Workspace.ps1 -Status
-pwsh -File scripts/Install-Workspace.ps1 -Status -Strict
+```bash
+just install-workspace -Status
+just install-workspace -Status -Strict
 ```
 
 | State | Meaning |
@@ -396,17 +395,17 @@ Use `-Remove` with `-Runtimes` or `-Layers` to remove selected recorded outputs 
 
 `-Remove` removes the runtimes or layers it names. `-Uninstall` removes everything the lock records, then the lock files. Both print a plan and write nothing until `-Apply` is given:
 
-```powershell
-pwsh -File scripts/Install-Workspace.ps1 -Remove -Runtimes pi
-pwsh -File scripts/Install-Workspace.ps1 -Remove -Runtimes pi -Apply
-pwsh -File scripts/Install-Workspace.ps1 -Remove -Layers personal-ai-plugin -Apply
-pwsh -File scripts/Install-Workspace.ps1 -Uninstall -Apply
+```bash
+just install-workspace -Remove -Runtimes pi
+just install-workspace -Remove -Runtimes pi -Apply
+just install-workspace -Remove -Layers personal-ai-plugin -Apply
+just install-workspace -Uninstall -Apply
 ```
 
 The rules:
 
 - `-Remove` needs `-Runtimes` or `-Layers`, and `-Uninstall` takes neither. The two switches exclude each other, and neither takes `-Status`. `-Strict` exits 1 when a removal skips anything, in a dry run or an apply.
-- `-Remove` needs a lock with `ownedSchema: 2` and an `owned` list, because it picks each record by its runtime and layers. `-Uninstall` needs only an `owned` list, so it also works from an `ownedSchema: 1` lock. A lock with no `owned` list is refused with `it has no owned list`, and a lock at another schema version with `its ownedSchema is N`. Each refusal says to run `Install-Workspace.ps1 -Apply once` and writes nothing. A workspace with no lock but some of the installer's outputs is refused the same way. A workspace with no lock and none of them has nothing to remove, and says so.
+- `-Remove` needs a lock with `ownedSchema: 2` and an `owned` list, because it picks each record by its runtime and layers. `-Uninstall` needs only an `owned` list, so it also works from an `ownedSchema: 1` lock. A lock with no `owned` list is refused with `it has no owned list`, and a lock at another schema version with `its ownedSchema is N`. Each refusal says to run `just install-workspace -Apply` once and writes nothing. A workspace with no lock but some of the installer's outputs is refused the same way. A workspace with no lock and none of them has nothing to remove, and says so.
 - `-Remove` takes each name out of the recorded selection. A name that is not selected removes nothing, and the run says so. It then applies the remaining selection, so a Claude symbolic link whose OpenCode copy was removed becomes a copy, and it deletes the records the remaining selection no longer produces.
 - `-Remove` refuses a removal that leaves `copilot` or `pi` selected without `claude`, and one that leaves no runtime or no layer. Name each runtime that needs it in the same command, for example `-Remove -Runtimes claude,copilot,pi`, or use `-Uninstall`.
 - `-Uninstall` deletes the lock files (`stack.lock.json`, `.bak`, and `.new`) only when nothing was skipped. Otherwise it prints `N items skipped; lock kept; rerun -Uninstall -Apply to retry.` and keeps the lock, with only the records still owed. It exits 0 in that case, and 1 with `-Strict`. `-Remove -Apply` prints the matching line, `N items skipped; lock kept; rerun -Remove -Apply to retry.` When a removal that finishes keeps files on disk, its final line names them, as `Uninstalled: the lock files are removed. Kept on disk, not restored or deleted: <paths>.` Without kept files it says that every recorded path was removed.

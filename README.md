@@ -31,7 +31,7 @@ The org and personal layers are local checkouts. They install for the same four 
 ## Quick start
 
 ```bash
-pwsh -File scripts/Install-Workspace.ps1 -Apply
+just install-workspace -Apply
 ```
 
 After an install, restart the running OpenCode server before using a new T3 session: T3 can reuse that server across sessions, so a new session alone does not reliably reload plugins or skills. Claude Code reads the plugin folder at session start. Copilot reads its plugin folders each time it starts. See [`docs/install.md`](docs/install.md).
@@ -47,9 +47,10 @@ After an install, restart the running OpenCode server before using a new T3 sess
 | `just security` | Scans the filesystem with Trivy. |
 | `just validate` | Validates the workspace manifests the installer consumes. |
 | `just validate-online` | Also checks the pstack pin against GitHub. Needs `git` and network. |
+| `just install-workspace` | Runs the TypeScript workspace installer. It prints the plan and writes nothing unless `-Apply` is given. |
 | `just test` | Runs the manifest verifier and the fast Node tests. |
 | `just test-node` | Runs the full node test suite under `scripts/`. Needs Node, PowerShell 7, and git; it is a local check, not a CI job. |
-| `just test-linux` | Runs the POSIX installer fixture lifecycle on Linux; the `portable` workflow runs it. |
+| `just test-linux` | Runs the installer fixture lifecycle under Bun on Linux; the `portable` workflow runs it. |
 | `just check` | Runs everything CI requires locally: format, lint, and test. |
 | `just verify` | Runs lint, test, and the AI-slop gate. |
 | `just agent-files` | Checks the `.agents/skills` tree and its `.claude/skills` links. |

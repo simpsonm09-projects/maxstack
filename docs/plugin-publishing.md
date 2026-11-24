@@ -26,7 +26,7 @@ The entry resolves its shared skills beside its own folder, so the installed fol
 
 ## Assembly
 
-`scripts/Install-Workspace.ps1` runs in audit mode by default and changes nothing. With `-Apply` it:
+`just install-workspace` runs in audit mode by default and changes nothing. With `-Apply` it:
 
 1. Checks each local checkout exists. For a git source it fetches the pinned commit into `.claude\cache\<name>` and checks it out. The cache's origin is set to the layer's url on each sync, so a cache cloned from another remote is never fetched from. A pin the remote cannot supply stops the run here, before anything is written.
 2. Validates each runtime block. A runtime without its prerequisite, an unknown runtime name, or an entry that is not a file under the folder stops the run.
@@ -44,7 +44,7 @@ Audit mode computes each of these and reports `missing`, `differs`, `matches`, o
 
 ## The recorded lock
 
-`stack.lock.json` is the install-provenance record. `Install-Workspace.ps1` writes it at the workspace root, not in this repository. It records `generatedAt`, the SHA-256 of the written workspace config, the Copilot wrapper record, and one entry per layer with its `name`, `kind`, `path` (null for a git layer), `source` (the source block that [install.md](install.md#layer-sources) describes), and installed `commit`. Each layer has three runtime records, and a runtime the layer does not name has `enabled: false`.
+`stack.lock.json` is the install-provenance record. The installer writes it at the workspace root, not in this repository. It records `generatedAt`, the SHA-256 of the written workspace config, the Copilot wrapper record, and one entry per layer with its `name`, `kind`, `path` (null for a git layer), `source` (the source block that [install.md](install.md#layer-sources) describes), and installed `commit`. Each layer has three runtime records, and a runtime the layer does not name has `enabled: false`.
 
 - `claude`: a local layer has `enabled`, `plugin`, `kind: "symlink"`, `child` (`.claude/plugins/<name>`), `target` (`.opencode/plugins/<name>`), and `treeSha256`. A git layer has `enabled`, `plugin`, `kind: "git"`, `child`, `repository`, `path`, `commit`, and `treeSha256`.
 - `opencode`: `enabled`, `folder` (`.opencode/plugins/<name>`), `entry`, `loader` (`discovery` for a root `index.ts`, `config` for a nested entry), `plugin` (the path named in `opencode.jsonc`, or null), and `agents` (the profile names installed).
@@ -70,7 +70,7 @@ The generated files live at the workspace root, which is not a git repository, s
 
 1. Merge the plugin change in `simpsonm09/pstack-max` and note the commit on `main`.
 2. Update `commit` in the pstack layer's `source` in `layers.json`, and `commit` in `pstack.lock.json`. Update `ref` too, if the branch moved. Run `python scripts/verify-manifests.py`.
-3. Run `pwsh -File scripts/Install-Workspace.ps1 -Apply`.
+3. Run `just install-workspace -Apply`.
 4. Restart the running OpenCode server, then start a new T3 session. T3 can reuse an OpenCode server across sessions, so a new session alone does not reliably reload plugins or skills. Claude Code reads `.claude/plugins` when it starts, and Copilot reads its plugin folders when it starts. Then run `scripts/verify-workspace-skill.sh <provider/model>` and `python scripts/verify-workspace-install.py`.
 
 Merge a layer's manifest changes in its own repository before a `claude` or `copilot` runtime that names it lands here. The Copilot runtime needs the layer's `.github/plugin/plugin.json` in the installed folder, so a layer's `files` list, or its `layer.json`, must name `.github/plugin` as well. Until a layer's `.claude-plugin/plugin.json` is on the checkout the installer reads, both audit and `-Apply` stop with a clear error. The checks run before any file is written, so a failure leaves the workspace unchanged.

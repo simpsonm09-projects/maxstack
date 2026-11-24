@@ -11,7 +11,7 @@ const t3 = readFileSync(join(root, 'docs', 't3-setup.md'), 'utf8');
 test('finding F4: the new workspace guide gives prerequisites, layer sources, commands, T3 setup, and ignore paths', () => {
   const section = install.split('## New workspace\n')[1]?.split('\n## ')[0] ?? '';
   for (const expected of [
-    'PowerShell 7',
+    'Bun 1.4.5',
     'Git',
     'Node.js and npm',
     'network access',
@@ -33,8 +33,8 @@ test('finding F4: the new workspace guide gives prerequisites, layer sources, co
   ]) {
     assert.ok(section.includes(ignored), `new workspace ignore block is missing ${ignored}`);
   }
-  assert.match(section, /\$PiCommand = Join-Path \$Workspace .*node_modules\/\.bin\/pi'/);
-  assert.match(section, /-Runtimes all -PiCommand \$PiCommand -Apply/);
+  assert.match(section, /PiCommand="\$Workspace\/\.maxstack\/npm\/node_modules\/\.bin\/pi"/);
+  assert.match(section, /-Runtimes all -PiCommand "\$PiCommand" -Apply/);
 });
 
 test('finding F7: Pi install-time selection and MAXSTACK_PI_BIN runtime behavior are documented', () => {

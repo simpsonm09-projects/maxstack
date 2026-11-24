@@ -76,7 +76,7 @@ Ownership is what makes removal safe:
 
 The proof is a round trip. A test snapshots a workspace, runs `install` then `uninstall`, and requires the tree to match the snapshot. Another runs `install`, `remove` for one runtime, and `update`, and requires the other runtimes' files to stay byte-identical.
 
-Linux is the only target. PowerShell 7 runs the installer, which uses symbolic links and sets the executable bit on the shell wrappers. CI runs the lifecycle tests on Linux.
+Linux is the only target. Bun runs the installer, which uses symbolic links and sets the executable bit on the shell wrappers. CI runs the lifecycle tests on Linux.
 
 ## Layer sources (implemented)
 

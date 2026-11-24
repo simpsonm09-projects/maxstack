@@ -41,9 +41,9 @@ validate-online:
 test-node:
     mise exec -- node --test --test-concurrency=4 scripts/*.test.mjs
 
-# Run the POSIX installer fixture lifecycle. The portable workflow runs it on Linux.
+# Run the installer fixture lifecycle under Bun. The portable workflow runs it on Linux.
 test-linux:
-    mise exec -- node --test --test-concurrency=4 scripts/ordinal-guard.test.mjs scripts/Install-Paths.test.mjs scripts/Install-Links.test.mjs scripts/verify-manifests.test.mjs scripts/Install-Workspace.posix.test.mjs
+    mise exec -- bun test scripts/Install-Workspace.*.test.mjs scripts/Install-WorkspaceDiscovery.test.mjs scripts/Install-Codex.test.mjs
 
 # Install the workspace bundle with the TypeScript installer. It prints the plan and writes nothing unless --apply is
 # given, so the default run is the audit.
