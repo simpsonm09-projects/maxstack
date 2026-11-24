@@ -28,7 +28,7 @@ jobs:
 
   hooks:
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -49,6 +49,18 @@ jobs:
           done
       - name: Validate hook config
         run: lefthook validate
+      # The required checks are the recipes the hooks run (C5.7). These four
+      # only ever run from a hook, so this job is where CI confirms them.
+      # `forbidden-files` sees the files this change touches, as the hook sees
+      # the staged ones.
+      - name: Confirm the hook recipes
+        run: |
+          just agent-files
+          base="${{ github.event.pull_request.base.sha }}"
+          if [ -n "$base" ]; then range="$base...HEAD"; else range="HEAD^ HEAD"; fi
+          git diff --name-only -z "$range" | xargs -0 -r just forbidden-files
+          just workflows
+          git ls-files -z -- '*.sh' '*.bash' | xargs -0 -r just shellcheck
 
   lint:
     uses: simpsonm09-projects/repo-standard/.github/workflows/lint.yml@60a4eea1170f97ac967c4224ee4ee58ce3959c3d # repo-standard, pinned commit
