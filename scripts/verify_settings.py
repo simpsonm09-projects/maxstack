@@ -60,15 +60,15 @@ def _enum(node: dict, key: str, failures: list[str], name: str) -> tuple:
 
 def _validator_constants(validator: str) -> dict[str, tuple[str, ...]]:
     names = (
-        "SettingsTopLevelKeys",
-        "SettingsRuntimeIds",
-        "SettingsCliModes",
-        "SettingsOsModes",
-        "SettingsT3Defaults",
+        "SETTINGS_TOP_LEVEL_KEYS",
+        "SETTINGS_RUNTIME_IDS",
+        "SETTINGS_CLI_MODES",
+        "SETTINGS_OS_MODES",
+        "SETTINGS_T3_DEFAULTS",
     )
     constants: dict[str, tuple[str, ...]] = {}
     for name in names:
-        match = re.search(rf"\$script:{name}\s*=\s*@\(([^)]*)\)", validator)
+        match = re.search(rf"export const {name}\s*=\s*\[([^\]]*)\]", validator)
         if match is not None:
             constants[name] = tuple(re.findall(r"'([^']*)'", match.group(1)))
     return constants
@@ -79,19 +79,19 @@ def _check_nested_keys(properties: dict, validator: str, failures: list[str]) ->
         (
             "runtime",
             "runtimes",
-            r"Assert-SettingsObjectKeys \$value\.runtimes\[\$runtime\] @\(([^)]*)\)",
+            r"assertSettingsObjectKeys\(entryValue, \[([^\]]*)\], `runtimes\.",
             ("cli",),
         ),
         (
             "layer",
             "layers",
-            r"Assert-SettingsObjectKeys \$value\.layers\[\$layer\] @\(([^)]*)\)",
+            r"assertSettingsObjectKeys\(entryValue, \[([^\]]*)\], `layers\.",
             ("source",),
         ),
         (
             "T3",
             "t3",
-            r"Assert-SettingsObjectKeys \$value\.t3 @\(([^)]*)\)",
+            r"assertSettingsObjectKeys\(value\.t3, \[([^\]]*)\]",
             ("cli", "snapshot", "defaults", "gatedInstances", "readOnlyInstances"),
         ),
     )
@@ -120,7 +120,7 @@ def _check_nested_keys(properties: dict, validator: str, failures: list[str]) ->
                     schema_nested_keys = tuple(entry_properties.keys())
         if validator_keys != expected or schema_nested_keys != expected:
             failures.append(
-                f"settings schema {block_name} keys differ from Install-Settings.ps1 validator keys"
+                f"settings schema {block_name} keys differ from scripts/install/settings.ts validator keys"
             )
 
 
@@ -141,10 +141,10 @@ def _check_enums(properties: dict, constants: dict, failures: list[str]) -> None
     if not isinstance(t3_properties, dict):
         t3_properties = {}
     for name, expected_values, node, key in (
-        ("SettingsCliModes", ("detect", "install"), runtime_properties, "cli"),
-        ("SettingsOsModes", ("auto", "windows", "macos", "linux"), properties, "os"),
+        ("SETTINGS_CLI_MODES", ("detect", "install"), runtime_properties, "cli"),
+        ("SETTINGS_OS_MODES", ("auto", "windows", "macos", "linux"), properties, "os"),
         (
-            "SettingsT3Defaults",
+            "SETTINGS_T3_DEFAULTS",
             ("leave-alone", "apply-defaults"),
             t3_properties,
             "defaults",
@@ -153,12 +153,12 @@ def _check_enums(properties: dict, constants: dict, failures: list[str]) -> None
         values = _enum(node, key, failures, f"{name} enum")
         if constants.get(name) != values or values != expected_values:
             failures.append(
-                f"settings schema values differ from Install-Settings.ps1 {name}"
+                f"settings schema values differ from scripts/install/settings.ts {name}"
             )
 
 
 def _check_source_length(properties: dict, validator: str, failures: list[str]) -> None:
-    source_limit = re.search(r"\$script:SettingsSourceMaxLength\s*=\s*(\d+)", validator)
+    source_limit = re.search(r"SETTINGS_SOURCE_MAX_LENGTH\s*=\s*(\d+)", validator)
     layers = properties.get("layers")
     layer_entries = (
         layers.get("additionalProperties") if isinstance(layers, dict) else None
@@ -177,7 +177,7 @@ def _check_source_length(properties: dict, validator: str, failures: list[str]) 
         or source_schema.get("maxLength") != int(source_limit.group(1))
     ):
         failures.append(
-            "settings source schema length differs from Install-Settings.ps1 validator limit"
+            "settings source schema length differs from scripts/install/settings.ts validator limit"
         )
 
 
@@ -230,9 +230,9 @@ def _check_schema(
         or version_schema.get("const") != 1
     ):
         failures.append("settings schema must require version 1")
-    if constants.get("SettingsTopLevelKeys") != tuple(properties.keys()):
+    if constants.get("SETTINGS_TOP_LEVEL_KEYS") != tuple(properties.keys()):
         failures.append(
-            "settings schema top-level keys differ from Install-Settings.ps1 validator keys"
+            "settings schema top-level keys differ from scripts/install/settings.ts validator keys"
         )
 
     runtimes = _object(properties, "runtimes", "runtimes", failures)
@@ -243,9 +243,9 @@ def _check_schema(
     if not isinstance(runtime_enum, list):
         failures.append("settings schema runtimes propertyNames must have an enum list")
         runtime_enum = []
-    if constants.get("SettingsRuntimeIds") != tuple(runtime_enum):
+    if constants.get("SETTINGS_RUNTIME_IDS") != tuple(runtime_enum):
         failures.append(
-            "settings schema runtime ids differ from Install-Settings.ps1 validator ids"
+            "settings schema runtime ids differ from scripts/install/settings.ts validator ids"
         )
     _check_nested_keys(properties, validator, failures)
     _check_enums(properties, constants, failures)
@@ -278,9 +278,9 @@ def check_settings_files(root: Path, failures: list[str]) -> None:
         root / "schemas" / "maxstack.settings.schema.json", root, failures
     )
     seed = _read_json(root / "workspace" / "maxstack.settings.json", root, failures)
-    validator_path = root / "scripts" / "Install-Settings.ps1"
+    validator_path = root / "scripts" / "install" / "settings.ts"
     if not validator_path.is_file():
-        failures.append("scripts/Install-Settings.ps1 is missing")
+        failures.append("scripts/install/settings.ts is missing")
         return
     validator = validator_path.read_text(encoding="utf-8")
     if schema is _MISSING or seed is _MISSING:

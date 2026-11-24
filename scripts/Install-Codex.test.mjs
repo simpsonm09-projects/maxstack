@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// The codex runtime of Install-Workspace.ps1: each selected layer's skills copied into .agents\skills, the ownership
+// The codex runtime of the installer: each selected layer's skills copied into .agents\skills, the ownership
 // record, removal, status, the selection rules, and the promise that a workspace which does not select codex is
 // unchanged. Every workspace is a scratch folder under the temp folder, and every layer is a local fixture, so no test
 // reads the real workspace, reaches a remote, or touches ~/.codex. The shared helpers come from
@@ -25,28 +25,21 @@ import { delimiter, join } from 'node:path';
 import { test } from 'node:test';
 
 import {
-  installer,
   isPiWrapperPath,
   lockPath,
   makeFixture,
-  normalizePiWrapperLock,
   plainOutput,
   python,
   readJson,
   repoRoot,
   runInstaller,
-  shell,
-  skip,
   statusRows,
   writeFakeCopilot,
   writeFakePi,
   writeFile,
-  windowsOnly,
   writeLayers,
 } from './lib/installer-test-kit.mjs';
 
-// The upstream main commit before the codex runtime. The byte-for-byte comparisons run its installer from git archive.
-const BASE_COMMIT = '787b5d9c1f5e38aca8624ff81858a1c04b69fac0';
 const ORG = 'org-ai-plugin';
 const PERSONAL = 'personal-ai-plugin';
 const LAYER_PATH = { [ORG]: `projects/repos/${ORG}`, [PERSONAL]: `projects/repos/${PERSONAL}` };
@@ -143,46 +136,8 @@ function envWithFakeCodex(base, extra = {}) {
   return env;
 }
 
-// The layers file of an installer tree other than this one: its layers.json, with the pstack pin pointed at the fixture.
-function writeTreeLayers(ctx, treeRoot, fileName) {
-  const manifest = readJson(join(treeRoot, 'layers.json'));
-  const pstack = manifest.layers.find((layer) => layer.name === 'pstack');
-  pstack.source = {
-    url: ctx.fixture.url,
-    path: 'plugins/pstack',
-    commit: ctx.fixture.commit,
-    ref: 'test',
-  };
-  const path = join(ctx.base, fileName);
-  writeFileSync(path, JSON.stringify(manifest));
-  return path;
-}
-
-// The installer of BASE_COMMIT, extracted from git archive. The manifest is an
-// input the comparison holds constant, so both installers read this checkout's
-// layers.json; only the installer code differs. A manifest change is tested on
-// its own, not as a difference between installer versions.
-function exportBaseTree(ctx) {
-  const archive = spawnSync('git', ['-C', repoRoot, 'archive', '--format=tar', BASE_COMMIT], {
-    windowsHide: true,
-    maxBuffer: 512 * 1024 * 1024,
-  });
-  assert.equal(archive.status, 0, `git archive ${BASE_COMMIT} failed: ${archive.stderr}`);
-  const tree = join(ctx.base, 'upstream-base');
-  mkdirSync(tree);
-  const extracted = spawnSync('tar', ['-x', '-f', '-', '-C', tree], {
-    windowsHide: true,
-    input: archive.stdout,
-  });
-  assert.equal(extracted.status, 0, `tar could not extract ${BASE_COMMIT}: ${extracted.stderr}`);
-  return {
-    installer: join(tree, 'scripts', 'Install-Workspace.ps1'),
-    layersFile: writeTreeLayers(ctx, repoRoot, 'layers-base.json'),
-  };
-}
-
 function mustRun(ctx, extra = [], options = {}) {
-  const run = runInstaller(shell, ctx, extra, options);
+  const run = runInstaller(ctx, extra, options);
   assert.equal(run.status, 0, `installer exited ${run.status}\n${run.stdout}\n${run.stderr}`);
   return run;
 }
@@ -274,19 +229,7 @@ function ownedSkillRecords(lock) {
 }
 
 function withContext(name, body, options) {
-  test(name, { skip }, () => {
-    const ctx = buildContext(options);
-    try {
-      body(ctx);
-    } finally {
-      rmSync(ctx.base, { recursive: true, force: true });
-    }
-  });
-}
-
-// The byte-for-byte comparisons run the base commit's PowerShell installer, which builds Windows paths.
-function withWindowsContext(name, body, options) {
-  test(name, { skip: skip || windowsOnly }, () => {
+  test(name, () => {
     const ctx = buildContext(options);
     try {
       body(ctx);
@@ -397,7 +340,7 @@ withContext(
         [PERSONAL]: { 'shared-skill': skillMarkdown('shared-skill') },
       },
     });
-    const run = runInstaller(shell, ctx, ['-Runtimes', 'codex']);
+    const run = runInstaller(ctx, ['-Runtimes', 'codex']);
     assert.notEqual(run.status, 0, plainOutput(run));
     assert.match(plainOutput(run), /duplicate skill shared-skill across layers/);
     assert.equal(lstatSafe(join(ctx.workspace, '.agents')), null, 'no .agents folder is written');
@@ -414,7 +357,7 @@ withContext(
         [PERSONAL]: { 'shared-skill': skillMarkdown('shared-skill') },
       },
     });
-    const run = runInstaller(shell, ctx, ['-Runtimes', 'codex']);
+    const run = runInstaller(ctx, ['-Runtimes', 'codex']);
     assert.notEqual(run.status, 0, plainOutput(run));
     assert.match(plainOutput(run), /duplicate skill/);
     assert.equal(lstatSafe(join(ctx.workspace, '.agents')), null);
@@ -455,7 +398,7 @@ for (const [label, folder, text, pattern] of [
         [PERSONAL]: { 'personal-demo': skillMarkdown('personal-demo') },
       },
     });
-    const run = runInstaller(shell, ctx, ['-Runtimes', 'codex']);
+    const run = runInstaller(ctx, ['-Runtimes', 'codex']);
     assert.notEqual(run.status, 0, plainOutput(run));
     assert.match(plainOutput(run), pattern);
     assert.equal(lstatSafe(join(ctx.workspace, '.agents')), null, 'nothing is written');
@@ -474,7 +417,7 @@ withContext(
       join(ctx.workspace, LAYER_PATH[ORG], 'skills', 'org-demo', 'linked'),
       'junction',
     );
-    const run = runInstaller(shell, ctx, ['-Runtimes', 'codex']);
+    const run = runInstaller(ctx, ['-Runtimes', 'codex']);
     assert.notEqual(run.status, 0, plainOutput(run));
     assert.match(plainOutput(run), /symbolic link or junction/);
     assert.equal(lstatSafe(join(ctx.workspace, '.agents')), null);
@@ -542,7 +485,7 @@ withContext(
   (shared) => {
     const ctx = addWorkspace(shared, 'clash');
     writeFile(ctx.workspace, '.agents/skills/org-demo/MINE.md', 'my own copy\n');
-    const run = runInstaller(shell, ctx, ['-Runtimes', 'codex']);
+    const run = runInstaller(ctx, ['-Runtimes', 'codex']);
     assert.notEqual(run.status, 0, plainOutput(run));
     assert.match(
       plainOutput(run),
@@ -576,15 +519,15 @@ withContext(
     const installed = join(ctx.workspace, '.agents', 'skills', 'org-demo', 'SKILL.md');
     const original = readFileSync(installed, 'utf8');
 
-    const matching = runInstaller(shell, ctx, ['-Status'], { apply: false });
+    const matching = runInstaller(ctx, ['-Status'], { apply: false });
     assert.equal(matching.status, 0, plainOutput(matching));
     assert.ok(hasRow(matching, 'matching', skillPath('org-demo')), plainOutput(matching));
     assert.match(plainOutput(matching), /AGENTS\.md/, 'status names the workspace AGENTS.md');
 
     writeFileSync(installed, '---\nname: org-demo\ndescription: edited by hand\n---\n');
-    const edited = runInstaller(shell, ctx, ['-Status'], { apply: false });
+    const edited = runInstaller(ctx, ['-Status'], { apply: false });
     assert.ok(hasRow(edited, 'modified', skillPath('org-demo')), plainOutput(edited));
-    const refused = runInstaller(shell, ctx, ['-Runtimes', 'codex']);
+    const refused = runInstaller(ctx, ['-Runtimes', 'codex']);
     assert.notEqual(refused.status, 0, plainOutput(refused));
     assert.match(
       plainOutput(refused),
@@ -594,18 +537,14 @@ withContext(
 
     writeFileSync(installed, original);
     assert.ok(
-      hasRow(
-        runInstaller(shell, ctx, ['-Status'], { apply: false }),
-        'matching',
-        skillPath('org-demo'),
-      ),
+      hasRow(runInstaller(ctx, ['-Status'], { apply: false }), 'matching', skillPath('org-demo')),
     );
 
     writeFileSync(
       join(ctx.workspace, LAYER_PATH[ORG], 'skills', 'org-demo', 'SKILL.md'),
       skillMarkdown('org-demo', { description: 'changed in the layer' }),
     );
-    const drifted = runInstaller(shell, ctx, ['-Status'], { apply: false });
+    const drifted = runInstaller(ctx, ['-Status'], { apply: false });
     assert.ok(hasRow(drifted, 'drifted', skillPath('org-demo')), plainOutput(drifted));
   },
 );
@@ -617,7 +556,7 @@ withContext(
     mustRun(ctx, ['-Runtimes', 'opencode,codex']);
     const before = snapshotOf(ctx);
 
-    const dry = runInstaller(shell, ctx, ['-Remove', '-Runtimes', 'codex'], { apply: false });
+    const dry = runInstaller(ctx, ['-Remove', '-Runtimes', 'codex'], { apply: false });
     assert.equal(dry.status, 0, plainOutput(dry));
     assert.ok(
       lstatSafe(join(ctx.workspace, '.agents', 'skills', 'org-demo')),
@@ -692,7 +631,7 @@ withContext('-Update -Check reports the codex skills without writing', (shared) 
   const ctx = addWorkspace(shared, 'update');
   mustRun(ctx, ['-Runtimes', 'codex']);
   const before = snapshotOf(ctx);
-  const run = runInstaller(shell, ctx, ['-Update', '-Check'], { apply: false });
+  const run = runInstaller(ctx, ['-Update', '-Check'], { apply: false });
   assert.equal(run.status, 0, plainOutput(run));
   assert.deepEqual(snapshotOf(ctx), before, 'nothing is written');
 });
@@ -741,7 +680,7 @@ withContext(
     assert.deepEqual(readLock(ctx).selection.runtimes, ['claude', 'copilot', 'opencode', 'pi']);
     assert.equal(lstatSafe(join(ctx.workspace, '.agents')), null, 'no codex output');
     assert.doesNotMatch(
-      plainOutput(runInstaller(shell, ctx, ['-Status'], { apply: false })),
+      plainOutput(runInstaller(ctx, ['-Status'], { apply: false })),
       /AGENTS\.md/,
     );
   },
@@ -754,7 +693,7 @@ for (const [label, value] of [
 ]) {
   withContext(`-Runtimes refuses ${label}`, (shared) => {
     const ctx = addWorkspace(shared, 'lookalike');
-    const run = runInstaller(shell, ctx, ['-Runtimes', value]);
+    const run = runInstaller(ctx, ['-Runtimes', value]);
     assert.notEqual(run.status, 0, plainOutput(run));
     assert.equal(lstatSafe(lockPath(ctx)), null, 'nothing is written');
     assert.equal(lstatSafe(join(ctx.workspace, '.agents')), null, 'no codex output');
@@ -773,7 +712,7 @@ withContext('the settings file refuses a runtime name with a zero-width space', 
     join(ctx.workspace, 'maxstack.settings.json'),
     JSON.stringify({ version: 1, runtimes: { 'codex​': {} } }),
   );
-  const run = runInstaller(shell, ctx, []);
+  const run = runInstaller(ctx, []);
   assert.notEqual(run.status, 0, plainOutput(run));
   assert.equal(lstatSafe(lockPath(ctx)), null);
 });
@@ -784,7 +723,7 @@ withContext(
   'the Codex hook config contains only the generated PreToolUse definition and is recorded with its hash',
   (shared) => {
     const ctx = addWorkspace(shared, 'gate', { hooks: { [ORG]: true } });
-    const run = runInstaller(shell, ctx, ['-Runtimes', 'opencode,codex'], {
+    const run = runInstaller(ctx, ['-Runtimes', 'opencode,codex'], {
       env: envWithFakeCodex(shared.base),
     });
     assert.equal(run.status, 0, plainOutput(run));
@@ -793,7 +732,7 @@ withContext(
     const config = readFileSync(join(ctx.workspace, '.codex', 'config.toml'), 'utf8');
     assert.match(
       config,
-      /^# Generated by maxstack\..*Regenerate with Install-Workspace\.ps1 -Apply\.$/m,
+      /^# Generated by maxstack\..*Regenerate with bun scripts\/install\/main\.ts -Apply\.$/m,
     );
     assert.match(
       config,
@@ -810,7 +749,7 @@ withContext(
 
 withContext('Codex launch arguments always print the fixed marker line', (shared) => {
   const ctx = addWorkspace(shared, 'gate-fixed', { hooks: { [ORG]: true } });
-  const run = runInstaller(shell, ctx, ['-Runtimes', 'opencode,codex'], {
+  const run = runInstaller(ctx, ['-Runtimes', 'opencode,codex'], {
     env: envWithFakeCodex(shared.base),
   });
   assert.equal(run.status, 0, plainOutput(run));
@@ -828,7 +767,7 @@ withContext(
     const ctx = addWorkspace(shared, 'gate-unowned', { hooks: { [ORG]: true } });
     mkdirSync(join(ctx.workspace, '.codex'), { recursive: true });
     writeFileSync(join(ctx.workspace, '.codex', 'config.toml'), 'theme = "dark"\n');
-    const run = runInstaller(shell, ctx, ['-Runtimes', 'opencode,codex'], {
+    const run = runInstaller(ctx, ['-Runtimes', 'opencode,codex'], {
       env: envWithFakeCodex(shared.base),
     });
     assert.equal(run.status, 0, plainOutput(run));
@@ -845,7 +784,7 @@ withContext(
 withContext('status reports a changed Codex hook hash from its stand-in source', (shared) => {
   const ctx = addWorkspace(shared, 'gate-hash-change', { hooks: { [ORG]: true } });
   mustRun(ctx, ['-Runtimes', 'opencode,codex'], { env: envWithFakeCodex(shared.base) });
-  const run = runInstaller(shell, ctx, ['-Status'], {
+  const run = runInstaller(ctx, ['-Status'], {
     apply: false,
     env: envWithFakeCodex(shared.base, { FAKE_CODEX_HASH_SALT: 'changed' }),
   });
@@ -866,7 +805,7 @@ withContext('an edited owned Codex config is kept and remains recorded', (shared
   mustRun(ctx, ['-Runtimes', 'opencode,codex'], { env: envWithFakeCodex(shared.base) });
   const path = join(ctx.workspace, '.codex', 'config.toml');
   writeFileSync(path, `${readFileSync(path, 'utf8')}# hand edit\n`);
-  const run = runInstaller(shell, ctx, ['-Runtimes', 'opencode,codex'], {
+  const run = runInstaller(ctx, ['-Runtimes', 'opencode,codex'], {
     env: envWithFakeCodex(shared.base),
   });
   assert.equal(run.status, 0, plainOutput(run));
@@ -889,7 +828,7 @@ withContext('removing the hook removes an unchanged generated Codex config', (sh
   mustRun(ctx, ['-Runtimes', 'opencode,codex'], { env: envWithFakeCodex(shared.base) });
   writeLocalLayer(ctx.workspace, ORG, ctx.skills[ORG], { hooks: false });
   rmSync(join(ctx.workspace, LAYER_PATH[ORG], 'hooks'), { recursive: true, force: true });
-  const run = runInstaller(shell, ctx, ['-Runtimes', 'opencode,codex'], {
+  const run = runInstaller(ctx, ['-Runtimes', 'opencode,codex'], {
     env: envWithFakeCodex(shared.base),
   });
   assert.equal(run.status, 0, plainOutput(run));
@@ -907,7 +846,7 @@ withContext('uninstall removes an unchanged generated Codex config', (shared) =>
 
 withContext('codex without an installed hook prints the fixed marker line', (shared) => {
   const ctx = addWorkspace(shared, 'gate-codex-only', { hooks: { [ORG]: true } });
-  const run = runInstaller(shell, ctx, ['-Runtimes', 'codex'], {
+  const run = runInstaller(ctx, ['-Runtimes', 'codex'], {
     env: envWithFakeCodex(shared.base),
   });
   assert.equal(run.status, 0, plainOutput(run));
@@ -921,7 +860,7 @@ withContext(
   (shared) => {
     const ctx = addWorkspace(shared, 'gate-audit', { hooks: { [ORG]: true } });
     mustRun(ctx, ['-Runtimes', 'opencode,codex'], { env: envWithFakeCodex(shared.base) });
-    const run = runInstaller(shell, ctx, ['-Runtimes', 'opencode,codex'], {
+    const run = runInstaller(ctx, ['-Runtimes', 'opencode,codex'], {
       apply: false,
       env: envWithFakeCodex(shared.base),
     });
@@ -930,104 +869,6 @@ withContext(
     assert.match(out, /\.codex\/config\.toml holds the hook/);
     assert.doesNotMatch(out, /Run -Apply to write \.codex\/config\.toml/);
     assert.doesNotMatch(out, /one-time step/);
-  },
-);
-
-// -- Byte for byte: a workspace that does not select codex is unchanged ---------------------------------------------
-
-// The installer of BASE_COMMIT and the installer here write into one workspace path, so their wrapper hashes, which
-// hold the path, compare equal. Each capture starts from an empty workspace: every folder but the layer checkouts goes.
-function resetWorkspace(workspace) {
-  for (const entry of readdirSync(workspace)) {
-    if (entry !== 'projects') rmSync(join(workspace, entry), { recursive: true, force: true });
-  }
-}
-
-// What one installer leaves from an empty workspace: its apply output, its status output, its lock, and its files. With
-// legacy, the base installer first writes the lock, and the selection field is then removed, as a lock from before it.
-function captureApply(ctx, { installerPath, layersFile }, { legacy = null } = {}) {
-  resetWorkspace(ctx.workspace);
-  if (legacy) {
-    mustRun(ctx, [], { installerPath: legacy.installer, layersFile: legacy.layersFile });
-    const lock = readLock(ctx);
-    delete lock.selection;
-    writeFileSync(lockPath(ctx), JSON.stringify(lock));
-  }
-  const apply = mustRun(ctx, [], { installerPath, layersFile });
-  const status = runInstaller(shell, ctx, ['-Status'], { apply: false, installerPath, layersFile });
-  const lock = readLock(ctx);
-  delete lock.generatedAt;
-  normalizePiWrapperLock(lock);
-  lock.configSha256 = '<workspace-config>';
-  for (const record of lock.owned ?? [])
-    if (record.path === 'opencode.jsonc') record.sha256 = '<workspace-config>';
-  const normalizeOutput = (run) =>
-    plainOutput(run)
-      .replace(
-        /(?:Wrote |Config already matches: )[^\r\n]*opencode\.jsonc/g,
-        'CONFIG opencode.jsonc',
-      )
-      .replace(/: matches(?=\s|$)/g, ': matching');
-  return {
-    apply: normalizeOutput(apply),
-    status: normalizeOutput(status),
-    lock: JSON.stringify(lock, null, 2),
-    files: snapshotOf(ctx, { normalizeConfig: true, normalizePiWrappers: true }),
-  };
-}
-
-withWindowsContext(
-  'a new workspace with no codex selection writes the same output, lock, and files as before',
-  (shared) => {
-    const base = exportBaseTree(shared);
-    const ctx = addWorkspace(shared, 'fresh');
-    const before = captureApply(ctx, {
-      installerPath: base.installer,
-      layersFile: base.layersFile,
-    });
-    const now = captureApply(ctx, { installerPath: installer, layersFile: shared.layersFile });
-    assert.equal(now.apply, before.apply, 'the apply output is the same');
-    assert.equal(now.status, before.status, 'the status output is the same');
-    assert.equal(now.lock, before.lock, 'the lock is the same');
-    assert.deepEqual(now.files, before.files, 'the files are the same');
-    assert.deepEqual(JSON.parse(now.lock).selection.runtimes, [
-      'claude',
-      'copilot',
-      'opencode',
-      'pi',
-    ]);
-  },
-);
-
-withWindowsContext(
-  'an old lock with no selection field is applied the same as before, and codex is not added',
-  (shared) => {
-    const base = exportBaseTree(shared);
-    const ctx = addWorkspace(shared, 'legacy');
-    const before = captureApply(
-      ctx,
-      { installerPath: base.installer, layersFile: base.layersFile },
-      { legacy: base },
-    );
-    const now = captureApply(
-      ctx,
-      { installerPath: installer, layersFile: shared.layersFile },
-      { legacy: base },
-    );
-    assert.equal(now.apply, before.apply, 'the apply output is the same');
-    assert.equal(now.status, before.status, 'the status output is the same');
-    assert.equal(now.lock, before.lock, 'the lock is the same');
-    assert.deepEqual(now.files, before.files, 'the files are the same');
-    assert.deepEqual(
-      JSON.parse(now.lock).selection.runtimes,
-      ['claude', 'copilot', 'opencode', 'pi'],
-      'the selection the lock gets is the four runtimes',
-    );
-    assert.equal(
-      lstatSafe(join(ctx.workspace, '.agents')),
-      null,
-      'codex is not added to an existing install',
-    );
   },
 );
 
@@ -1076,7 +917,7 @@ withContext(
       METADATA_SKILL,
       'Antigravity keeps the same source frontmatter bytes in the shared .agents/skills projection',
     );
-    const antiStatus = runInstaller(shell, ctx, ['-Status', '-Strict'], { apply: false });
+    const antiStatus = runInstaller(ctx, ['-Status', '-Strict'], { apply: false });
     assert.equal(antiStatus.status, 0, plainOutput(antiStatus));
 
     mustRun(ctx, ['-Runtimes', 'codex']);
@@ -1092,7 +933,7 @@ withContext(
       PSTACK_SKILLS.length + 2,
       'each folder has one record',
     );
-    const status = runInstaller(shell, ctx, ['-Status', '-Strict'], { apply: false });
+    const status = runInstaller(ctx, ['-Status', '-Strict'], { apply: false });
     assert.equal(status.status, 0, plainOutput(status));
   },
 );
@@ -1169,7 +1010,7 @@ withContext(
     );
     assert.deepEqual(record.runtimes, ['antigravity']);
     assert.equal(record.sha256, beforeHash, 'claim changes do not bless edited bytes');
-    const status = runInstaller(shell, ctx, ['-Status', '-Strict'], { apply: false });
+    const status = runInstaller(ctx, ['-Status', '-Strict'], { apply: false });
     assert.notEqual(status.status, 0, plainOutput(status));
     assert.ok(hasRow(status, 'modified', skillPath('org-demo')), plainOutput(status));
   },
@@ -1183,7 +1024,7 @@ withContext(
       [PERSONAL]: { 'Org-Demo': skillMarkdown('Org-Demo') },
     };
     const ctx = addWorkspace(shared, 'duplicate', { skills: duplicateSkills });
-    const run = runInstaller(shell, ctx, ['-Runtimes', 'antigravity']);
+    const run = runInstaller(ctx, ['-Runtimes', 'antigravity']);
     assert.notEqual(run.status, 0, plainOutput(run));
     assert.match(plainOutput(run), /duplicate skill .* across layers/i);
     assert.equal(lstatSafe(lockPath(ctx)), null);
@@ -1211,7 +1052,7 @@ withContext(
     const outside = join(shared.base, 'outside-skills');
     mkdirSync(outside, { recursive: true });
     symlinkSync(outside, join(linked.workspace, '.agents'), 'junction');
-    const run = runInstaller(shell, linked, ['-Runtimes', 'antigravity']);
+    const run = runInstaller(linked, ['-Runtimes', 'antigravity']);
     assert.notEqual(run.status, 0, plainOutput(run));
     assert.match(plainOutput(run), /link or reparse point/);
     assert.equal(readdirSync(outside).length, 0, 'the external directory is untouched');
@@ -1238,7 +1079,7 @@ withContext(
   },
 );
 
-withContext('PowerShell and Python readers reject malformed shared runtime claims', (shared) => {
+withContext('the Python reader rejects malformed shared runtime claims', (shared) => {
   assert.ok(python, 'python is needed for the verifier');
   const cases = [
     [
@@ -1284,7 +1125,7 @@ withContext('PowerShell and Python readers reject malformed shared runtime claim
     const lock = readLock(ctx);
     mutate(ownedSkillRecords(lock)[0]);
     writeFileSync(lockPath(ctx), JSON.stringify(lock));
-    const status = runInstaller(shell, ctx, ['-Status'], { apply: false });
+    const status = runInstaller(ctx, ['-Status'], { apply: false });
     assert.notEqual(status.status, 0, plainOutput(status));
     const home = join(shared.base, `malformed-home-${name}`);
     mkdirSync(home);

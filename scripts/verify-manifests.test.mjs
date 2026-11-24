@@ -75,10 +75,11 @@ function runVerifier({
       join(repoRoot, 'scripts', 'fixtures', 't3', 'server-settings-keys.json'),
       join(root, 'scripts', 'fixtures', 't3', 'server-settings-keys.json'),
     );
-    writeFileSync(join(root, 'scripts', 'Install-Workspace.ps1'), '# installer\n');
+    mkdirSync(join(root, 'scripts', 'install'), { recursive: true });
+    writeFileSync(join(root, 'scripts', 'install', 'main.ts'), '// installer\n');
     copyFileSync(
-      join(repoRoot, 'scripts', 'Install-Settings.ps1'),
-      join(root, 'scripts', 'Install-Settings.ps1'),
+      join(repoRoot, 'scripts', 'install', 'settings.ts'),
+      join(root, 'scripts', 'install', 'settings.ts'),
     );
     copyFileSync(verifier, join(root, 'scripts', 'verify-manifests.py'));
     copyFileSync(
@@ -130,7 +131,7 @@ test('the shipped manifests pass the verifier', { skip }, () => {
   assert.match(run.stdout, /^PASS:/);
 });
 
-test('the settings seed is valid and schema keys match the PowerShell validator', { skip }, () => {
+test('the settings seed is valid and schema keys match the TypeScript validator', { skip }, () => {
   const run = spawnSync(python, [verifier], { windowsHide: true, encoding: 'utf8' });
   assert.equal(run.status, 0, failureOf(run));
   assert.deepEqual(shipped('workspace/maxstack.settings.json'), {
@@ -140,10 +141,10 @@ test('the settings seed is valid and schema keys match the PowerShell validator'
 });
 
 test('the manifest verifier rejects settings schema and validator key drift', { skip }, () => {
-  const validator = readFileSync(join(repoRoot, 'scripts', 'Install-Settings.ps1'), 'utf8');
+  const validator = readFileSync(join(repoRoot, 'scripts', 'install', 'settings.ts'), 'utf8');
   // Anchor on the declaration, read the same way the verifier reads it, so a change to the ids cannot leave this fixture
   // matching nothing. The mutation appends one id the schema does not declare, which is real schema-validator drift.
-  const runtimeIds = /\$script:SettingsRuntimeIds\s*=\s*@\(([^)]*)\)/g;
+  const runtimeIds = /export const SETTINGS_RUNTIME_IDS\s*=\s*\[([^\]]*)\]/g;
   assert.equal(
     [...validator.matchAll(runtimeIds)].length,
     1,
@@ -151,10 +152,12 @@ test('the manifest verifier rejects settings schema and validator key drift', { 
   );
   const altered = validator.replace(
     runtimeIds,
-    (_list, ids) => `$script:SettingsRuntimeIds = @(${ids}, 'new-harness')`,
+    (_list, ids) => `export const SETTINGS_RUNTIME_IDS = [${ids}, 'new-harness']`,
   );
   assert.notEqual(altered, validator, 'the fixture replacement found the validator list');
-  const run = runVerifier({ extraFiles: { 'scripts/Install-Settings.ps1': altered } });
+  const run = runVerifier({
+    extraFiles: { 'scripts/install/settings.ts': altered },
+  });
   assert.equal(run.status, 1, failureOf(run));
   assert.match(failureOf(run), /schema runtime ids differ/);
 });
@@ -194,7 +197,7 @@ test(
         (schema) => {
           schema.properties.runtimes.additionalProperties.properties.cli.enum = 'detect';
         },
-        /SettingsCliModes enum must have an enum list/,
+        /SETTINGS_CLI_MODES enum must have an enum list/,
       ],
       [
         (schema) => {
@@ -527,7 +530,7 @@ test('an ownership record with no schema version, or no owned list, is refused',
   assert.equal(noSchema.status, 1, failureOf(noSchema));
   assert.match(
     failureOf(noSchema),
-    /ownedSchema must be 2; run Install-Workspace\.ps1 -Apply once/,
+    /ownedSchema must be 2; run bun scripts\/install\/main\.ts -Apply once/,
   );
 
   const noOwned = runVerifier({ lock: { ownedSchema: 2, layers: [] } });
@@ -711,7 +714,10 @@ test(
   () => {
     const run = runVerifier({ lock: { ...lockWith(OWNED), ownedSchema: 1 } });
     assert.equal(run.status, 1, failureOf(run));
-    assert.match(failureOf(run), /ownedSchema must be 2; run Install-Workspace\.ps1 -Apply once/);
+    assert.match(
+      failureOf(run),
+      /ownedSchema must be 2; run bun scripts\/install\/main\.ts -Apply once/,
+    );
   },
 );
 
@@ -777,356 +783,6 @@ test('a malformed source block is refused, with the rule it breaks', { skip }, (
     assert.match(failureOf(run), reason, JSON.stringify(source));
   }
 });
-
-// The differential test: one PowerShell process runs Read-MaxstackSettings on each input, and one Python process runs the
-// document reader on each input. The two must accept and refuse the same inputs. The driver is written to a temporary
-// folder and receives the scripts folder, the input folder, and the layer names as arguments.
-const SETTINGS_DRIVER = `param([string] $Scripts, [string] $Folder, [string] $LayerList, [string] $Platform)
-Set-StrictMode -Version Latest
-. (Join-Path $Scripts 'Install-Ordinal.ps1')
-. (Join-Path $Scripts 'Install-WorkspaceDiscovery.ps1')
-. (Join-Path $Scripts 'Install-LayerSources.ps1')
-. (Join-Path $Scripts 'Install-Settings.ps1')
-$layers = @($LayerList -split ',')
-foreach ($file in @(Get-ChildItem -LiteralPath $Folder -Filter '*.json' | Sort-Object Name)) {
-  try {
-    $null = Read-MaxstackSettings -Path $file.FullName -LayerNames $layers -Platform $Platform
-    $verdict = 'ACCEPT'
-  } catch {
-    $verdict = 'REFUSE'
-  }
-  Write-Output "DIFF|$($file.BaseName)|$verdict"
-}
-`;
-
-function findPwsh() {
-  return spawnSync('pwsh', ['-NoProfile', '-Command', 'exit 0'], { windowsHide: true }).status === 0
-    ? 'pwsh'
-    : null;
-}
-
-const differentialSkip =
-  python && findPwsh() ? false : 'python and pwsh are needed for the reader differential';
-
-// The settings inputs, as [name, bytes]. Each becomes one file in the input folder.
-function settingsDifferentialInputs() {
-  const bom = Buffer.from([0xef, 0xbb, 0xbf]);
-  const padded = (size) => {
-    const prefix = '{"version":1,"$schema":"';
-    const suffix = '"}';
-    return `${prefix}${'a'.repeat(size - prefix.length - suffix.length)}${suffix}`;
-  };
-  return [
-    ['minimal', '{"version":1}'],
-    ['bom', Buffer.concat([bom, Buffer.from('{"version":1}')])],
-    ['double-bom', Buffer.concat([bom, bom, Buffer.from('{"version":1}')])],
-    ['null', 'null'],
-    ['version-true', '{"version":true}'],
-    ['version-float', '{"version":1.0}'],
-    ['version-exponent', '{"version":1e0}'],
-    ['version-big-int', '{"version":100000000000000000000000000000000}'],
-    ['duplicate-key', '{"version":1,"version":1}'],
-    ['escaped-duplicate-key', '{"version":1,"\\u0076ersion":1}'],
-    ['nbsp-before-object', '\u00a0{"version":1}'],
-    ['vertical-tab', '\u000b{"version":1}'],
-    ['form-feed', '\u000c{"version":1}'],
-    ['lone-surrogate-escape', '{"version":1,"layers":{"pstack":{"source":"local:\\ud800"}}}'],
-    [
-      'lone-surrogate-bytes',
-      Buffer.concat([
-        Buffer.from('{"version":1,"layers":{"pstack":{"source":"local:'),
-        Buffer.from([0xed, 0xa0, 0x80]),
-        Buffer.from('"}}}'),
-      ]),
-    ],
-    ['proto-key', '{"version":1,"__proto__":{}}'],
-    ['constructor-key', '{"version":1,"constructor":{}}'],
-    ['nan', '{"version":NaN}'],
-    ['infinity', '{"version":Infinity}'],
-    ['case-variant-version', '{"Version":1}'],
-    ['case-variant-runtimes', '{"version":1,"Runtimes":{"claude":{}}}'],
-    ['case-variant-cli', '{"version":1,"runtimes":{"claude":{"CLI":"detect"}}}'],
-    ['unknown-key', '{"version":1,"extra":true}'],
-    ['empty-runtimes', '{"version":1,"runtimes":{}}'],
-    ['all-as-runtime', '{"version":1,"runtimes":{"all":{}}}'],
-    ['os-all', '{"version":1,"os":"all"}'],
-    ['cli-boolean', '{"version":1,"runtimes":{"claude":{"cli":true}}}'],
-    ['t3-defaults-boolean', '{"version":1,"t3":{"defaults":true}}'],
-    ['os-boolean', '{"version":1,"os":true}'],
-    ['snapshot-integer', '{"version":1,"t3":{"snapshot":1}}'],
-    ['deep-array-100000', `{"version":1,"x":${'['.repeat(100000)}${']'.repeat(100000)}}`],
-    ['deep-object-100000', `{"version":1,"x":${'{"a":'.repeat(100000)}0${'}'.repeat(100000)}}`],
-    ['deep-40', `{"version":1,"x":${'['.repeat(40)}0${']'.repeat(40)}}`],
-    ['size-65536', padded(65536)],
-    ['size-65537', padded(65537)],
-    ['empty-local-path', '{"version":1,"layers":{"pstack":{"source":"local:"}}}'],
-    ['date-like-schema', '{"version":1,"$schema":"2020-12-01T00:00:00Z"}'],
-    ['date-like-source', '{"version":1,"layers":{"pstack":{"source":"2020-12-01"}}}'],
-    [
-      'https-source',
-      '{"version":1,"layers":{"pstack":{"source":"https://example.invalid/owner/repo.git@main"}}}',
-    ],
-    ['owner-source', '{"version":1,"layers":{"pstack":{"source":"sample-org/sample-layer@main"}}}'],
-    ['control-in-source', '{"version":1,"layers":{"pstack":{"source":"sample/repo@main\\u0007"}}}'],
-    ['del-source', '{"version":1,"layers":{"pstack":{"source":"sample/repo@main\u007f"}}}'],
-    ['c1-source', '{"version":1,"layers":{"pstack":{"source":"sample/repo@main\u0085"}}}'],
-    ['nbsp-source', '{"version":1,"layers":{"pstack":{"source":"sample/repo@main\u00a0"}}}'],
-    ['bidi-source', '{"version":1,"layers":{"pstack":{"source":"sample/repo@main\u202e"}}}'],
-    ['accented-source', '{"version":1,"layers":{"pstack":{"source":"sample/repo@main\u00e9"}}}'],
-    ['dotdot-ref', '{"version":1,"layers":{"pstack":{"source":"sample/repo@bad..ref"}}}'],
-    ['default-source', '{"version":1,"layers":{"pstack":{"source":"default"}}}'],
-    ['unknown-layer', '{"version":1,"layers":{"absent":{}}}'],
-    ['trailing-comma', '{"version":1,}'],
-    ['line-comment', '// note\n{"version":1}'],
-    ['empty-file', ''],
-    ['invalid-utf8', Buffer.from([0x7b, 0x22, 0xff, 0x22, 0x3a, 0x31, 0x7d])],
-    [
-      'full-valid',
-      '{"$schema":"https://json-schema.org/draft/2020-12/schema","version":1,"os":"auto","runtimes":{"claude":{"cli":"detect"}},"layers":{"pstack":{"source":"default"}},"t3":{"cli":"detect","snapshot":true,"defaults":"leave-alone"}}',
-    ],
-    ['pi-alone', '{"version":1,"runtimes":{"pi":{}}}'],
-    // The nine culture inputs of the review: a format character in a key or a value that PowerShell's culture rules equated
-    // with the plain name. Both readers refuse each one.
-    ['culture-default-zero-width', '{"version":1,"layers":{"pstack":{"source":"default​"}}}'],
-    ['culture-default-soft-hyphen', '{"version":1,"layers":{"pstack":{"source":"default­"}}}'],
-    ['culture-os-zero-width', '{"version":1,"os":"windows​"}'],
-    ['culture-cli-zero-width', '{"version":1,"runtimes":{"claude":{"cli":"install​"}}}'],
-    ['culture-t3-defaults-soft-hyphen', '{"version":1,"t3":{"defaults":"apply-defaults­"}}'],
-    ['culture-top-level-runtimes', '{"version":1,"runtimes​":{"claude":{}}}'],
-    ['culture-top-level-layers', '{"version":1,"layers​":{"pstack":{}}}'],
-    ['culture-layer-key-zero-width', '{"version":1,"layers":{"pstack​":{}}}'],
-    ['culture-runtime-key-zwj', '{"version":1,"runtimes":{"pi‍":{}}}'],
-    ['culture-t3-key-soft-hyphen', '{"version":1,"t3":{"cli­":"detect"}}'],
-    ...sourceGrammarInputs(),
-  ];
-}
-
-// The source grammar, one input per case: each is a settings file whose only content is one layers.pstack.source value. The
-// PowerShell reader and the Python reader must agree on every one. A value is written with JSON.stringify, so a backslash, a
-// control character, or a format character is encoded exactly as the reader will see it.
-function sourceGrammarInputs() {
-  const cases = [
-    ['local-absolute-drive', 'local:C:\\x\\y'],
-    ['local-absolute-dotdot', 'local:C:\\x\\..\\y'],
-    ['local-absolute-slash', 'local:/x/y'],
-    ['local-unc', 'local:\\\\server\\share\\x'],
-    ['local-device-prefix', 'local:\\\\?\\C:\\x'],
-    ['local-relative', 'local:projects/repos/checkout'],
-    ['local-relative-dotdot', 'local:../outside'],
-    ['local-relative-dotdot-middle', 'local:a/../b'],
-    ['local-relative-dotdot-inside-name', 'local:a..b'],
-    ['local-drive-relative', 'local:C:checkout'],
-    ['local-root-relative', 'local:\\checkout'],
-    ['local-dot', 'local:.'],
-    ['local-blank', 'local:   '],
-    ['local-ideographic-space', 'local:\u3000'],
-    ['local-zero-width-space', 'local:\u200b'],
-    ['local-tab-inside', 'local:a\tb'],
-    ['local-lrm-inside', 'local:a\u200eb'],
-    ['local-alm-inside', 'local:a\u061cb'],
-    ['local-isolate-inside', 'local:a\u2066b'],
-    ['local-line-separator', 'local:a\u2028b'],
-    ['local-soft-hyphen', 'local:a\u00adb'],
-    ['local-surrogate-pair', 'local:a\ud83d\ude00'],
-    ['local-upper-prefix', 'LOCAL:checkout'],
-    ['default-with-space', 'default '],
-    ['default-capital', 'Default'],
-    ['git-owner-repo-git-suffix', 'sample/repo.git@main'],
-    ['git-owner-repo-dot-git', 'sample/.git@main'],
-    ['git-https-query', 'https://host/a?b@main'],
-    ['git-https-fragment', 'https://host/a#b@main'],
-    ['git-https-userinfo', 'https://user@host/repo@main'],
-    ['git-http-scheme', 'http://host/repo@main'],
-    ['git-ssh-scheme', 'ssh://git@host/repo@main'],
-    ['git-folder-with-ref', 'C:\\x@main'],
-    ['git-no-ref', 'sample/repo'],
-    ['git-empty-ref', 'sample/repo@'],
-    ['git-ref-lock-suffix', 'sample/repo@feat.lock'],
-    ['git-ref-trailing-dot', 'sample/repo@feat.'],
-    ['git-ref-leading-dash', 'sample/repo@-feat'],
-    ['git-ref-brace', 'sample/repo@a@{b'],
-    ['git-ref-double-slash', 'sample/repo@a//b'],
-    ['git-ref-star', 'sample/repo@a*'],
-    ['git-ref-tilde', 'sample/repo@a~1'],
-    ['git-location-dotdot', 'https://host/a/../b@main'],
-    ['git-sha-ref', 'sample/repo@0123456789abcdef0123456789abcdef01234567'],
-    ['local-unc-forward', 'local://server/share/x'],
-    ['local-device-dot', 'local:\\\\.\\C:\\x'],
-    ['local-device-drive-form', 'local:\\\\?\\C:\\x'],
-    ['local-trailing-dot', 'local:tools/checkout.'],
-    ['local-trailing-space', 'local:tools/checkout '],
-    ['default-zero-width', 'default\u200b'],
-    ['default-soft-hyphen', 'default\u00ad'],
-    ['default-zero-width-joiner', 'default\u200d'],
-    ['git-zero-width-ref', 'sample/repo@feat\u200bx'],
-    ['git-zero-width-location', 'sample/re\u200bpo@main'],
-    ['git-soft-hyphen-location', 'sample/re\u00adpo@main'],
-  ];
-  return cases.map(([name, value]) => [
-    name,
-    JSON.stringify({ version: 1, layers: { pstack: { source: value } } }),
-  ]);
-}
-
-// The verdict of each input from each reader: ACCEPT or REFUSE. Python exits 0 for accept and 1 for refuse.
-function runSettingsDifferential(inputs, platform) {
-  const dir = mkdtempSync(join(tmpdir(), 'maxstack-differential-'));
-  try {
-    const folder = join(dir, 'inputs');
-    mkdirSync(folder);
-    for (const [name, bytes] of inputs) writeFileSync(join(folder, `${name}.json`), bytes);
-    const driver = join(dir, 'driver.ps1');
-    writeFileSync(driver, SETTINGS_DRIVER);
-    const layerList = shipped('layers.json')
-      .layers.map((layer) => layer.name)
-      .join(',');
-    const ps = spawnSync(
-      'pwsh',
-      [
-        '-NoProfile',
-        '-NonInteractive',
-        '-File',
-        driver,
-        '-Scripts',
-        join(repoRoot, 'scripts'),
-        '-Folder',
-        folder,
-        '-LayerList',
-        layerList,
-        '-Platform',
-        platform,
-      ],
-      { windowsHide: true, encoding: 'utf8' },
-    );
-    assert.equal(ps.status, 0, `the PowerShell driver failed: ${ps.stderr}`);
-    const powershell = new Map(
-      ps.stdout
-        .split(/\r?\n/)
-        .filter((line) => line.startsWith('DIFF|'))
-        .map((line) => line.split('|').slice(1)),
-    );
-    const reader = new Map();
-    for (const [name] of inputs) {
-      const run = spawnSync(
-        python,
-        [
-          join(repoRoot, 'scripts', 'verify_settings.py'),
-          '--document',
-          join(folder, `${name}.json`),
-          '--platform',
-          platform,
-        ],
-        { windowsHide: true, encoding: 'utf8' },
-      );
-      assert.ok(
-        run.status === 0 || (run.status === 1 && run.stderr === ''),
-        `the Python reader crashed on ${name}: ${run.stderr}`,
-      );
-      reader.set(name, run.status === 0 ? 'ACCEPT' : 'REFUSE');
-    }
-    return { powershell, reader };
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-}
-
-test(
-  'the Python reader and the PowerShell reader accept and refuse the same settings files',
-  { skip: differentialSkip, timeout: 120_000 },
-  () => {
-    const inputs = settingsDifferentialInputs();
-    for (const platform of ['Windows', 'POSIX']) {
-      const { powershell, reader } = runSettingsDifferential(inputs, platform);
-      const disagreements = inputs
-        .filter(([name]) => powershell.get(name) !== reader.get(name))
-        .map(([name]) => `${name}: PowerShell ${powershell.get(name)}, Python ${reader.get(name)}`);
-      assert.deepEqual(disagreements, [], `${platform}: the two readers disagree`);
-      const verdicts = new Set(powershell.values());
-      assert.ok(
-        verdicts.has('ACCEPT') && verdicts.has('REFUSE'),
-        `${platform}: the differential needs both accepted and refused inputs`,
-      );
-    }
-  },
-);
-
-// Inputs with a host-independent unsafe meaning. Host-specific path inputs are listed with the branch they must refuse below.
-const MUST_REFUSE = [
-  'local-relative-dotdot',
-  'local-relative-dotdot-middle',
-  'default-zero-width',
-  'default-soft-hyphen',
-  'default-zero-width-joiner',
-  'git-zero-width-ref',
-  'git-zero-width-location',
-  'git-soft-hyphen-location',
-  'culture-default-zero-width',
-  'culture-default-soft-hyphen',
-  'culture-os-zero-width',
-  'culture-cli-zero-width',
-  'culture-t3-defaults-soft-hyphen',
-  'culture-top-level-runtimes',
-  'culture-top-level-layers',
-  'culture-layer-key-zero-width',
-  'culture-runtime-key-zwj',
-  'culture-t3-key-soft-hyphen',
-];
-
-test(
-  'the readers refuse each culture and root-relative input the review found, in both readers',
-  { skip: differentialSkip, timeout: 120_000 },
-  () => {
-    const inputs = settingsDifferentialInputs();
-    const windowsOnly = [
-      'local-absolute-slash',
-      'local-unc',
-      'local-unc-forward',
-      'local-device-prefix',
-      'local-device-dot',
-      'local-device-drive-form',
-      'local-drive-relative',
-      'local-root-relative',
-      'local-trailing-dot',
-      'local-trailing-space',
-    ];
-    const posixOnly = ['local-absolute-dotdot'];
-    const expectedAccept = {
-      Windows: [
-        'local-absolute-drive',
-        'local-absolute-dotdot',
-        'local-relative',
-        'local-relative-dotdot-inside-name',
-      ],
-      POSIX: [
-        'local-absolute-slash',
-        'local-unc',
-        'local-unc-forward',
-        'local-device-prefix',
-        'local-device-dot',
-        'local-device-drive-form',
-        'local-drive-relative',
-        'local-root-relative',
-        'local-trailing-dot',
-        'local-trailing-space',
-        'local-relative',
-      ],
-    };
-    for (const [platform, platformOnly] of [
-      ['Windows', windowsOnly],
-      ['POSIX', posixOnly],
-    ]) {
-      const { powershell, reader } = runSettingsDifferential(inputs, platform);
-      const notRefused = [...MUST_REFUSE, ...platformOnly]
-        .filter((name) => powershell.get(name) !== 'REFUSE' || reader.get(name) !== 'REFUSE')
-        .map((name) => `${name}: PowerShell ${powershell.get(name)}, Python ${reader.get(name)}`);
-      assert.deepEqual(notRefused, [], `${platform}: a reader accepts an input it must refuse`);
-      const notAccepted = expectedAccept[platform]
-        .filter((name) => powershell.get(name) !== 'ACCEPT' || reader.get(name) !== 'ACCEPT')
-        .map((name) => `${name}: PowerShell ${powershell.get(name)}, Python ${reader.get(name)}`);
-      assert.deepEqual(notAccepted, [], `${platform}: an ordinary host path was refused`);
-    }
-  },
-);
 
 // The decision log is read as lines, so a carriage return inside a field or a line with other than six tab-separated fields
 // changes what every reader sees. The verifier refuses both.

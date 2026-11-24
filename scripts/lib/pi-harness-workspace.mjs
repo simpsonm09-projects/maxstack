@@ -119,7 +119,7 @@ export function readWrapperPiBin({ workspace, env, platform }) {
   const wrapper = join(workspace, '.maxstack', 'bin', name);
   if (!existsSync(wrapper)) {
     throw new SetupError(
-      `the Pi wrapper ${wrapper} is missing; run scripts/Install-Workspace.ps1 -Apply`,
+      `the Pi wrapper ${wrapper} is missing; run bun scripts/install/main.ts -Apply`,
     );
   }
   const text = readFileSync(wrapper, 'utf8');

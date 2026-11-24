@@ -1,6 +1,6 @@
 """The ownership record in stack.lock.json, and the shape check both verifiers share.
 
-Install-Workspace.ps1 writes the record. verify-manifests.py --lock and
+scripts/install/main.ts writes the record. verify-manifests.py --lock and
 verify-workspace-install.py refuse a record that is malformed with these checks. The module
 reads files and never writes.
 """
@@ -250,7 +250,7 @@ def utf8_order(text: str) -> bytes:
 
 SELECTION_RUNTIMES = ("claude", "opencode", "copilot", "pi", "codex", "cursor", "antigravity")
 OWNED_RUNTIMES = SELECTION_RUNTIMES + ("t3-gated-instances", "workspace-instructions")
-# The runtimes a lock with no selection reads as. codex is opt-in, so it is not among them (Install-Workspace.ps1).
+# The runtimes a lock with no selection reads as. codex is opt-in, so it is not among them (scripts/install/main.ts).
 DEFAULT_RUNTIMES = ("claude", "opencode", "copilot", "pi")
 # Each runtime whose wrapper or settings name the Claude plugin folders, which only claude writes.
 NEEDS_CLAUDE = ("copilot", "pi")
@@ -394,12 +394,12 @@ def check_owned(lock: dict, failures: list[str]) -> None:
         lock.get("ownedSchema"), bool
     ):
         failures.append(
-            f"stack.lock.json: ownedSchema must be {OWNED_SCHEMA}; run Install-Workspace.ps1 -Apply once to write it"
+            f"stack.lock.json: ownedSchema must be {OWNED_SCHEMA}; run bun scripts/install/main.ts -Apply once to write it"
         )
     owned = lock.get("owned")
     if not isinstance(owned, list):
         failures.append(
-            "stack.lock.json has no owned list; rerun Install-Workspace.ps1 -Apply"
+            "stack.lock.json has no owned list; rerun bun scripts/install/main.ts -Apply"
         )
         return
     keys: list[str] = []

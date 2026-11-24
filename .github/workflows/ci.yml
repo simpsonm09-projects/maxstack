@@ -51,21 +51,21 @@ jobs:
         run: lefthook validate
 
   lint:
-    uses: simpsonm09-projects/repo-standard/.github/workflows/lint.yml@301bf82b937f8d6a09da73e9a22030bce2acd2e1 # repo-standard, pinned commit
+    uses: simpsonm09-projects/repo-standard/.github/workflows/lint.yml@60a4eea1170f97ac967c4224ee4ee58ce3959c3d # repo-standard, pinned commit
   aislop:
     permissions:
       contents: read
       security-events: write
-    uses: simpsonm09-projects/repo-standard/.github/workflows/aislop.yml@301bf82b937f8d6a09da73e9a22030bce2acd2e1 # repo-standard, pinned commit
+    uses: simpsonm09-projects/repo-standard/.github/workflows/aislop.yml@60a4eea1170f97ac967c4224ee4ee58ce3959c3d # repo-standard, pinned commit
   security:
     permissions:
       contents: read
       security-events: write
-    uses: simpsonm09-projects/repo-standard/.github/workflows/security.yml@301bf82b937f8d6a09da73e9a22030bce2acd2e1 # repo-standard, pinned commit
+    uses: simpsonm09-projects/repo-standard/.github/workflows/security.yml@60a4eea1170f97ac967c4224ee4ee58ce3959c3d # repo-standard, pinned commit
   standard:
     permissions:
       contents: read
-    uses: simpsonm09-projects/repo-standard/.github/workflows/standard.yml@301bf82b937f8d6a09da73e9a22030bce2acd2e1 # repo-standard, pinned commit
+    uses: simpsonm09-projects/repo-standard/.github/workflows/standard.yml@60a4eea1170f97ac967c4224ee4ee58ce3959c3d # repo-standard, pinned commit
 
   # Required. The manifest verifier is the fast gate; the installer suite moves
   # to the `portable` workflow on main and weekly.
@@ -97,4 +97,4 @@ jobs:
       - name: Lint the JavaScript
         run: just lint
       - name: Node tests
-        run: mise exec -- node --test scripts/ordinal-guard.test.mjs scripts/generate-layers.test.mjs scripts/verify-manifests.test.mjs scripts/verify-pi-harness.test.mjs
+        run: mise exec -- node --test scripts/generate-layers.test.mjs scripts/verify-manifests.test.mjs scripts/verify-pi-harness.test.mjs

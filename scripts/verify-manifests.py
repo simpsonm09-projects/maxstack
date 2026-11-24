@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Check that the workspace manifests the installer consumes agree.
 
-`scripts/Install-Workspace.ps1` reads `layers.json`, `pstack.lock.json`, and
+`scripts/install/main.ts` reads `layers.json`, `pstack.lock.json`, and
 `workspace/opencode.jsonc`. A drift between them installs a broken bundle, so this
 fails CI first. By default it reads only the manifests and never reaches the network.
 With `--online` it also asks GitHub whether the pinned branch still points at the
@@ -303,8 +303,8 @@ def check_workspace_config(config: dict, failures: list[str]) -> None:
 
 
 def check_surface(failures: list[str]) -> None:
-    if not (REPO_ROOT / "scripts" / "Install-Workspace.ps1").is_file():
-        failures.append("scripts/Install-Workspace.ps1 is missing")
+    if not (REPO_ROOT / "scripts" / "install" / "main.ts").is_file():
+        failures.append("scripts/install/main.ts is missing")
     if not (REPO_ROOT / "docs" / "plugin-publishing.md").is_file():
         failures.append("docs/plugin-publishing.md is missing")
     surface = (REPO_ROOT / "README.md", REPO_ROOT / "docs" / "layout.md")

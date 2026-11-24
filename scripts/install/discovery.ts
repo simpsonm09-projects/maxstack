@@ -33,8 +33,8 @@ function hasNoControlCharacters(path: string, name: string): void {
       `${name} path contains a character that reorders or splits a line: ${shown}. Give a plain path.`,
     );
   }
-  // Control, format, line, and paragraph separators are all refused.
-  if (/[\p{Cc}\p{Zl}\p{Zp}]/u.test(character)) {
+  // Control characters are refused as such; a line or paragraph separator falls through to the line rule below.
+  if (/\p{Cc}/u.test(character)) {
     throw new Error(`${name} path contains control characters: ${shown}`);
   }
   if (/\p{Cf}/u.test(character)) {
@@ -123,10 +123,10 @@ export function maxstackRepoRoot(scriptRoot: string): string | null {
 /** A maxstack checkout holds the layer manifest and this installer. */
 export function isMaxstackCheckout(folder: string): boolean {
   if (!folder) return false;
-  const installer = existsSync(join(folder, 'scripts', 'Install-Workspace.ps1'));
-  const typed = existsSync(join(folder, 'scripts', 'install', 'main.ts'));
   return (
-    existsSync(join(folder, 'layers.json')) && statSync(join(folder, 'layers.json')).isFile() && (installer || typed)
+    existsSync(join(folder, 'layers.json')) &&
+    statSync(join(folder, 'layers.json')).isFile() &&
+    existsSync(join(folder, 'scripts', 'install', 'main.ts'))
   );
 }
 

@@ -16,19 +16,7 @@ The workspace is CLI-first. No MCP server is installed by default. Every service
 
 Discord and Postman are reached through the vault wrappers, not by putting a token in the environment. Run `with-vault --role agent <tool> <args>` for an agent, `with-vault --role human <tool> <args>` for the human vault identity, or `with-secrets --require <names> <tool> <args>` for the human path, which sets those values in that one command's environment only. The wrapper brokers the credential from the self-hosted Infisical Agent Vault, and the proxy attaches it to the request. See [Repository relationships](relationship.md) for the command scheme and the identities.
 
-## Verify a server
-
-```powershell
-pwsh -File scripts/Test-McpServers.ps1
-```
-
-It reports each server's prerequisite, not the live session:
-
-- `ok` means a remote endpoint answered a JSON-RPC initialize without auth, or an `npx` package resolves on npm.
-- `auth` means the endpoint is reachable but needs a sign-in.
-- `bad-url` means the URL is not an MCP endpoint.
-- `missing-package` means the npm package does not exist.
-- `needs-docker` means the command needs a Docker daemon.
+## Check the live connection
 
 The live connection state belongs to the OpenCode server that runs the session. T3 can reuse that server across sessions, so check it from the active session and restart the server after reinstalling a plugin or skill. The OpenCode log records `mcp connected` and `mcp connect failed`.
 

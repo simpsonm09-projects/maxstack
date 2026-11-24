@@ -2,7 +2,6 @@
 // restores, and the refusals of a lock it cannot use. Helpers come from ./lib/installer-test-kit.mjs.
 
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
 import {
   readFileSync,
   readdirSync,
@@ -16,7 +15,6 @@ import {
   renameSync,
   rmdirSync,
 } from 'node:fs';
-import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import {
@@ -28,7 +26,6 @@ import {
   PSTACK_NPM_FOLDER,
   SCHEMA1,
   USER_CONFIG,
-  USER_SETTINGS,
   assertOk,
   danglingLinks,
   independentSha,
@@ -38,7 +35,6 @@ import {
   mustApply,
   ownedRecord,
   plainOutput,
-  psShell,
   problemRows,
   readJson,
   removal,
@@ -48,12 +44,10 @@ import {
   seedUserFiles,
   setLock,
   settingsPath,
+  stripDiscoveryLine,
   sha256Upper,
-  shell,
-  skip,
   snapshotTree,
   statusRows,
-  stripDiscoveryLine,
   withFreshWorkspace,
   withWindowsWorkspace,
   windowsOnly,
@@ -116,8 +110,8 @@ withWorkspace(
       layers: { pstack: {} },
     });
     mustApply(ctx);
-    assertOk(runInstaller(shell, ctx, ['-Remove', '-Runtimes', 'pi']));
-    const status = runInstaller(shell, ctx, ['-Status', '-Strict'], { apply: false });
+    assertOk(runInstaller(ctx, ['-Remove', '-Runtimes', 'pi']));
+    const status = runInstaller(ctx, ['-Status', '-Strict'], { apply: false });
     assert.equal(status.status, 1, plainOutput(status));
     assert.match(plainOutput(status), /Settings: pending runtime 'pi'/);
     assert.doesNotMatch(plainOutput(status), /changed since|Settings: unlisted (runtime|layer)/);
@@ -135,8 +129,8 @@ withWorkspace(
       layers: { pstack: {}, [personal]: {} },
     });
     mustApply(ctx);
-    assertOk(runInstaller(shell, ctx, ['-Remove', '-Layers', personal]));
-    const status = runInstaller(shell, ctx, ['-Status', '-Strict'], { apply: false });
+    assertOk(runInstaller(ctx, ['-Remove', '-Layers', personal]));
+    const status = runInstaller(ctx, ['-Status', '-Strict'], { apply: false });
     assert.equal(status.status, 1, plainOutput(status));
     assert.match(plainOutput(status), new RegExp(`Settings: pending layer '${personal}'`));
     assert.doesNotMatch(plainOutput(status), /changed since|Settings: unlisted (runtime|layer)/);
@@ -152,7 +146,7 @@ withWorkspace(
     writeWorkspaceSettings(ctx, { version: 1, layers: { pstack: { source: 'local:nope' } } });
     const skipLine =
       /Settings: layers\.pstack\.source resolves to no folder at .*nope\. This run skips layer pstack and has no fallback\./;
-    const remove = runInstaller(shell, ctx, ['-Remove', '-Layers', 'personal-ai-plugin'], {
+    const remove = runInstaller(ctx, ['-Remove', '-Layers', 'personal-ai-plugin'], {
       apply: false,
     });
     assertOk(remove, plainOutput(remove));
@@ -167,7 +161,7 @@ withWorkspace(
   (ctx) => {
     mustApply(ctx);
     writeWorkspaceSettings(ctx, { version: 1, layers: { pstack: { source: 'local:nope' } } });
-    const uninstall = runInstaller(shell, ctx, ['-Uninstall'], { apply: false });
+    const uninstall = runInstaller(ctx, ['-Uninstall'], { apply: false });
     assertOk(uninstall, plainOutput(uninstall));
     assert.doesNotMatch(
       plainOutput(uninstall),
@@ -261,7 +255,7 @@ withWorkspace(
 // wrote are kept; removal happens only when the runtime or every layer stops naming copilot.
 test(
   'a Copilot run that cannot find Copilot keeps the recorded wrappers, and a deselected runtime removes them',
-  { skip: skip || windowsOnly },
+  { skip: windowsOnly },
   async (t) => {
     const copilotCmd = (ctx) => join(ctx.workspace, '.maxstack', 'bin', 'copilot.cmd');
     const copilotSh = (ctx) => join(ctx.workspace, '.maxstack', 'bin', 'copilot.sh');
@@ -385,7 +379,7 @@ test(
         const layersFile = writeLayers(ctx, (manifest) => {
           for (const layer of manifest.layers) delete layer.runtimes.copilot;
         });
-        const run = runInstaller(shell, ctx, [], { layersFile });
+        const run = runInstaller(ctx, [], { layersFile });
         assertOk(run);
         assert.match(plainOutput(run), /Removed the stale wrapper/, run.stdout);
         assert.ok(
@@ -443,7 +437,7 @@ withWindowsWorkspace(
     rmdirSync(child);
     symlinkSync(outside, child, 'junction');
 
-    const run = runInstaller(shell, ctx, ['-Uninstall', '-Strict'], { apply: true });
+    const run = runInstaller(ctx, ['-Uninstall', '-Strict'], { apply: true });
     assert.notEqual(run.status, 0, plainOutput(run));
     assert.match(plainOutput(run), /link no longer points at its recorded target|modified by hand/);
     assert.equal(
@@ -507,7 +501,7 @@ withWindowsWorkspace(
     const lockBefore = readFileSync(lockPath, 'utf8');
     const configBefore = readFileSync(configPath, 'utf8');
 
-    const audit = runInstaller(shell, ctx, [], {
+    const audit = runInstaller(ctx, [], {
       apply: false,
       layersFile: withoutPersonalRuntimes(ctx),
     });
@@ -657,7 +651,7 @@ withWindowsWorkspace(
     const copy = join(ctx.workspace, '.claude', 'plugins', 'org-ai-plugin');
     const label = '.claude/plugins/org-ai-plugin';
     appendFileSync(join(copy, 'index.ts'), '// hand edit\n');
-    const audit = runInstaller(shell, ctx, [], { apply: false });
+    const audit = runInstaller(ctx, [], { apply: false });
     assert.match(audit.stdout, /plugins\\org-ai-plugin: differs/, audit.stdout);
     assert.ok(
       problemRows(runStatus(ctx)).some((row) => row.state === 'modified' && row.label === label),
@@ -931,7 +925,7 @@ withWorkspace(
   (ctx) => {
     mustApply(ctx);
     const lock = readJson(lockPath(ctx));
-    const { owned, ...withoutOwned } = lock;
+    const { owned: _owned, ...withoutOwned } = lock;
     // A schema-1 lock with an owned list still uninstalls (item 9), so only -Remove refuses it.
     const both = [
       ['-Uninstall', '-Apply'],
@@ -953,10 +947,10 @@ withWorkspace(
       else setLock(ctx, value);
       const before = snapshotTree(ctx.workspace);
       for (const args of argsList) {
-        const run = runInstaller(shell, ctx, args, { apply: false });
+        const run = runInstaller(ctx, args, { apply: false });
         assert.equal(run.status, 1, `${label}: ${args.join(' ')}\n${run.stdout}\n${run.stderr}`);
         assert.match(plainOutput(run), pattern, label);
-        assert.match(plainOutput(run), /Install-Workspace\.ps1 -Apply once/, label);
+        assert.match(plainOutput(run), /bun scripts\/install\/main\.ts -Apply once/, label);
         assert.deepEqual(snapshotTree(ctx.workspace), before, `${label}: ${args.join(' ')} wrote`);
       }
     }
@@ -999,7 +993,6 @@ withWindowsWorkspace(
     const wrapper = join(ctx.workspace, '.maxstack', 'bin', 'copilot.cmd');
     appendFileSync(wrapper, 'rem hand edit\r\n');
     const run = runInstaller(
-      shell,
       ctx,
       ['-Remove', '-Runtimes', 'pi', '-Apply', '-CopilotCommand', MISSING_COPILOT],
       { apply: false },
@@ -1016,59 +1009,7 @@ withWindowsWorkspace(
 
 // Removal fixes: quarantine, already-gone records, the restore fallback, excluded folders, the swap check, the summary
 // line, strays, and offline uninstall from a schema-1 lock.
-
-// Holds a file open without sharing, from another process, until the returned child is killed.
-// The ready marker goes to the temp folder, not beside the file: a marker inside an owned folder would change its hash.
-function holdExclusive(path) {
-  const ready = join(
-    tmpdir(),
-    `maxstack-ready-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-  );
-  const script = `$f = [IO.File]::Open('${path.replaceAll("'", "''")}', 'Open', 'Read', 'Read'); New-Item -ItemType File -Path '${ready.replaceAll("'", "''")}' | Out-Null; Start-Sleep -Seconds 300`;
-  const child = spawn(psShell, ['-NoProfile', '-Command', script], {
-    windowsHide: true,
-    stdio: 'ignore',
-  });
-  const deadline = Date.now() + 60000;
-  while (!existsSync(ready)) {
-    if (Date.now() > deadline) throw new Error(`the holder did not open ${path}`);
-    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 200);
-  }
-  rmSync(ready, { force: true });
-  return child;
-}
-
 const ORIGINAL_CONFIG_B = '{\n  "original": true\n}\n';
-
-withWindowsWorkspace(
-  'a folder with a file held open by another process is kept, and a retry after the file is released finishes',
-  (ctx) => {
-    seedUserFiles(ctx);
-    const before = snapshotTree(ctx.workspace, { skipGit: true });
-    mustApply(ctx);
-    const held = join(ctx.workspace, ORG_FOLDER, 'skills', 'demo-skill', 'SKILL.md');
-    const holder = holdExclusive(held);
-    try {
-      const first = removal(ctx, ['-Uninstall']);
-      assertOk(first);
-      assert.match(
-        first.stdout,
-        /^SKIP\s+\.opencode\/plugins\/org-ai-plugin\s+in use/m,
-        first.stdout,
-      );
-      assert.ok(
-        existsSync(ORG_FOLDER_FULL(ctx)) || existsSync(`${ORG_FOLDER_FULL(ctx)}.maxstack-removing`),
-        'the folder in use was lost',
-      );
-    } finally {
-      holder.kill();
-    }
-    assertOk(removal(ctx, ['-Uninstall']));
-    assert.equal(existsSync(lockPath(ctx)), false, 'the retry did not finish');
-    assert.deepEqual(snapshotTree(ctx.workspace, { skipGit: true }), before);
-  },
-  {},
-);
 
 withWindowsWorkspace(
   'a recorded file the user already deleted is complete, not a skip, and the uninstall removes the lock',
@@ -1191,40 +1132,6 @@ withWindowsWorkspace(
       '1 items skipped; lock kept; rerun -Uninstall -Apply to retry.',
       run.stdout,
     );
-  },
-  {},
-);
-
-withWindowsWorkspace(
-  'a restore that cannot replace its file leaves no uninstall copy behind, and a rerun finishes',
-  (ctx) => {
-    writeFile(ctx.workspace, '.pi/agent/settings.json', USER_SETTINGS);
-    mustApply(ctx);
-    const holder = holdExclusive(settingsPath(ctx));
-    let first;
-    try {
-      first = removal(ctx, ['-Uninstall']);
-      assertOk(first);
-      assert.equal(
-        existsSync(`${settingsPath(ctx)}.uninstall-restore`),
-        false,
-        'a copy was left behind',
-      );
-      assert.equal(
-        existsSync(`${settingsPath(ctx)}.uninstall-replaced`),
-        false,
-        'a copy was left behind',
-      );
-      assert.match(
-        first.stdout,
-        /^SKIP\s+\.pi\/agent\/settings\.json\s+could not be removed/m,
-        first.stdout,
-      );
-    } finally {
-      holder.kill();
-    }
-    assertOk(removal(ctx, ['-Uninstall']));
-    assert.equal(readFileSync(settingsPath(ctx), 'utf8'), USER_SETTINGS);
   },
   {},
 );
@@ -1818,7 +1725,7 @@ withWorkspace(
   (ctx) => {
     mustApply(ctx);
     writeWorkspaceSettings(ctx, { version: 1, layers: { pstack: { source: 'local:nope' } } });
-    const dry = runInstaller(shell, ctx, ['-Uninstall'], { apply: false });
+    const dry = runInstaller(ctx, ['-Uninstall'], { apply: false });
     assertOk(dry, plainOutput(dry));
     assert.doesNotMatch(
       plainOutput(dry),

@@ -17,35 +17,15 @@ import {
 import { tmpdir } from 'node:os';
 import { dirname, join, parse, resolve, sep } from 'node:path';
 import { test } from 'node:test';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+
+import { safeName } from './install/ordinal.ts';
+import { convertToMaxstackPath, maxstackAbsolutePath } from './install/paths.ts';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const helper = join(repoRoot, 'scripts', 'Install-WorkspaceDiscovery.ps1');
-const installer = join(repoRoot, 'scripts', 'Install-Workspace.ps1');
 const tsInstaller = join(repoRoot, 'scripts', 'install', 'main.ts');
+const discoveryModule = pathToFileURL(join(repoRoot, 'scripts', 'install', 'discovery.ts')).href;
 
-// The installer the run under test drives: TypeScript under Bun, PowerShell under node --test.
-function spawnInstaller(extra, { workspace, layersFile, cwd, env }) {
-  const args = ['-Workspace', workspace, '-LayersFile', layersFile, ...extra];
-  if (process.versions.bun) {
-    return spawnSync(process.execPath, [tsInstaller, ...args], {
-      windowsHide: true,
-      encoding: 'utf8',
-      cwd,
-      env,
-    });
-  }
-  return spawnSync(shell, ['-NoProfile', '-NonInteractive', '-File', installer, ...args], {
-    windowsHide: true,
-    encoding: 'utf8',
-    cwd,
-    env,
-  });
-}
-const shell =
-  spawnSync('pwsh', ['-NoProfile', '-Command', 'exit 0'], { windowsHide: true }).status === 0
-    ? 'pwsh'
-    : null;
 // These cases exercise Windows path semantics (case-insensitive lookup, 8.3 names, drive roots, MAX_PATH display).
 const windowsOnly =
   process.platform === 'win32' ? false : 'the assertion names Windows-only path behaviour';
@@ -64,6 +44,39 @@ function marker(root, file = 'stack.lock.json') {
   return root;
 }
 
+// The installer the run under test drives.
+function spawnInstaller(extra, { workspace, layersFile, cwd, env }) {
+  const args = ['-Workspace', workspace, '-LayersFile', layersFile, ...extra];
+  return spawnSync(process.execPath, [tsInstaller, ...args], {
+    windowsHide: true,
+    encoding: 'utf8',
+    cwd,
+    env,
+  });
+}
+
+// Resolves one discovery case in a child process, so a thrown error exits 23 with its message on stderr.
+const driver = join(tmpdir(), `maxstack-discovery-driver-${process.pid}.ts`);
+writeFileSync(
+  driver,
+  `import { resolveMaxstackWorkspace } from ${JSON.stringify(discoveryModule)};
+const options = JSON.parse(Buffer.from(process.argv[2], 'base64').toString('utf8'));
+try {
+  const result = resolveMaxstackWorkspace({
+    explicitSpecified: options.explicitSpecified,
+    explicitValue: options.explicitValue,
+    currentDirectory: options.cwd,
+    scriptRoot: options.scriptRoot,
+    platform: options.platform,
+  });
+  process.stdout.write(JSON.stringify({ workspace: result.workspace, origin: result.origin, warning: result.warning, note: result.note }) + '\\n');
+} catch (error) {
+  process.stderr.write(String(error && error.message ? error.message : error) + '\\n');
+  process.exit(23);
+}
+`,
+);
+
 function invoke(options = {}) {
   const complete = {
     explicitSpecified: false,
@@ -73,12 +86,10 @@ function invoke(options = {}) {
     ...options,
   };
   const encodedOptions = Buffer.from(JSON.stringify(complete), 'utf8').toString('base64');
-  const locationSetup = complete.nonFilesystem ? 'Set-Location Env:; ' : '';
-  const command = `[Console]::OutputEncoding = [Text.Encoding]::UTF8; ${locationSetup}$o = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${encodedOptions}')) | ConvertFrom-Json -AsHashtable; . '${helper.replaceAll("'", "''")}'; ${complete.prelude ?? ''} try { $r = Resolve-MaxstackWorkspace -ExplicitSpecified:$o.explicitSpecified -ExplicitValue $o.explicitValue -CurrentDirectory $o.cwd -ScriptRoot $o.scriptRoot; [ordered]@{workspace=$r.Workspace; origin=$r.Origin; warning=$r.Warning; note=$(if ($r.PSObject.Properties.Name -contains 'Note') { $r.Note } else { $null })} | ConvertTo-Json -Compress } catch { Write-Error $_; exit 23 }`;
   const env = { ...process.env };
   if (Object.hasOwn(options, 'envWorkspace')) env.MAXSTACK_WORKSPACE = options.envWorkspace;
   else delete env.MAXSTACK_WORKSPACE;
-  return spawnSync(shell, ['-NoProfile', '-Command', command], {
+  return spawnSync(process.execPath, [driver, encodedOptions], {
     cwd: options.spawnCwd ?? options.cwd,
     env,
     encoding: 'utf8',
@@ -104,11 +115,7 @@ function withRoot(run) {
   }
 }
 
-test('workspace discovery requires PowerShell 7', { skip: !shell }, () => {
-  assert.ok(existsSync(helper));
-});
-
-test('explicit path wins over environment, cwd marker, and script layout', { skip: !shell }, () =>
+test('explicit path wins over environment, cwd marker, and script layout', {}, () =>
   withRoot((root) => {
     const explicit = marker(directory(root, 'explicit'));
     const env = marker(directory(root, 'env'));
@@ -128,7 +135,7 @@ test('explicit path wins over environment, cwd marker, and script layout', { ski
   }),
 );
 
-test('environment wins over cwd marker and script layout', { skip: !shell }, () =>
+test('environment wins over cwd marker and script layout', {}, () =>
   withRoot((root) => {
     const env = marker(directory(root, 'env'));
     const cwd = marker(directory(root, 'cwd'));
@@ -143,7 +150,7 @@ test('environment wins over cwd marker and script layout', { skip: !shell }, () 
 
 test(
   'a marker that is a symbolic link is not read, and the walk goes on to the next marker',
-  { skip: !shell },
+  {},
   (t) =>
     withRoot((root) => {
       const outer = directory(root, 'outer');
@@ -172,7 +179,7 @@ test(
     }),
 );
 
-test('script layout resolves exact repos and worktrees segments', { skip: !shell }, () =>
+test('script layout resolves exact repos and worktrees segments', {}, () =>
   withRoot((root) => {
     for (const layoutName of ['repos', 'worktrees']) {
       const workspace = directory(root, layoutName);
@@ -184,47 +191,41 @@ test('script layout resolves exact repos and worktrees segments', { skip: !shell
   }),
 );
 
-test(
-  'cwd marker beats script layout; unrelated script paths do not match layout',
-  { skip: !shell },
-  () =>
-    withRoot((root) => {
-      const cwdWorkspace = marker(directory(root, 'cwd-workspace'));
-      const layoutWorkspace = directory(root, 'layout-workspace');
-      const layoutRoot = directory(layoutWorkspace, 'projects/repos/repo/scripts');
-      resolveCase(
-        { cwd: directory(cwdWorkspace, 'child'), scriptRoot: layoutRoot },
-        cwdWorkspace,
-        'cwd marker stack.lock.json',
-      );
-      const badScript = directory(root, 'a/b/c/repo/scripts');
-      resolveFails(
-        { cwd: directory(root, 'outside'), scriptRoot: badScript },
-        'Workspace discovery failed',
-      );
-    }),
+test('cwd marker beats script layout; unrelated script paths do not match layout', {}, () =>
+  withRoot((root) => {
+    const cwdWorkspace = marker(directory(root, 'cwd-workspace'));
+    const layoutWorkspace = directory(root, 'layout-workspace');
+    const layoutRoot = directory(layoutWorkspace, 'projects/repos/repo/scripts');
+    resolveCase(
+      { cwd: directory(cwdWorkspace, 'child'), scriptRoot: layoutRoot },
+      cwdWorkspace,
+      'cwd marker stack.lock.json',
+    );
+    const badScript = directory(root, 'a/b/c/repo/scripts');
+    resolveFails(
+      { cwd: directory(root, 'outside'), scriptRoot: badScript },
+      'Workspace discovery failed',
+    );
+  }),
 );
 
-test(
-  'relative explicit and environment paths resolve against filesystem cwd',
-  { skip: !shell },
-  () =>
-    withRoot((root) => {
-      const cwd = directory(root, 'base');
-      const explicit = marker(directory(cwd, 'explicit'));
-      resolveCase(
-        { explicitSpecified: true, explicitValue: 'explicit', cwd },
-        explicit,
-        '-Workspace',
-      );
-      const env = marker(directory(cwd, 'environment'));
-      resolveCase({ envWorkspace: 'environment', cwd }, env, 'MAXSTACK_WORKSPACE');
-    }),
+test('relative explicit and environment paths resolve against filesystem cwd', {}, () =>
+  withRoot((root) => {
+    const cwd = directory(root, 'base');
+    const explicit = marker(directory(cwd, 'explicit'));
+    resolveCase(
+      { explicitSpecified: true, explicitValue: 'explicit', cwd },
+      explicit,
+      '-Workspace',
+    );
+    const env = marker(directory(cwd, 'environment'));
+    resolveCase({ envWorkspace: 'environment', cwd }, env, 'MAXSTACK_WORKSPACE');
+  }),
 );
 
 test(
   'explicit path matching is case-insensitive on Windows and keeps the case given',
-  { skip: !shell || windowsOnly },
+  { skip: windowsOnly },
   () =>
     withRoot((root) => {
       const target = marker(directory(root, 'CaseSensitiveName'));
@@ -238,63 +239,45 @@ test(
     }),
 );
 
-test(
-  'successful installer runs print the resolved workspace before argument validation',
-  { skip: !shell },
-  () =>
-    withRoot((root) => {
-      const target = directory(root, 'target');
-      const env = { ...process.env };
-      delete env.MAXSTACK_WORKSPACE;
-      const run = spawnSync(
-        shell,
-        ['-NoProfile', '-File', installer, '-Workspace', target, '-Apply', '-Status'],
-        {
-          cwd: root,
-          env,
-          encoding: 'utf8',
-          windowsHide: true,
-        },
-      );
-      assert.notEqual(run.status, 0);
-      assert.equal(run.stdout.split(/\r?\n/)[0], `Workspace: ${target} (from -Workspace)`);
-      assert.match(run.stderr, /Choose one/);
-      assert.deepEqual(readdirSync(target), []);
-    }),
+test('successful installer runs print the resolved workspace before argument validation', {}, () =>
+  withRoot((root) => {
+    const target = directory(root, 'target');
+    const env = { ...process.env };
+    delete env.MAXSTACK_WORKSPACE;
+    const run = spawnSync(
+      process.execPath,
+      [tsInstaller, '-Workspace', target, '-Apply', '-Status'],
+      {
+        cwd: root,
+        env,
+        encoding: 'utf8',
+        windowsHide: true,
+      },
+    );
+    assert.notEqual(run.status, 0);
+    assert.equal(run.stdout.split(/\r?\n/)[0], `Workspace: ${target} (from -Workspace)`);
+    assert.match(run.stderr, /Choose one/);
+    assert.deepEqual(readdirSync(target), []);
+  }),
 );
 
-test(
-  'explicit empty and invalid environment targets fail without falling through',
-  { skip: !shell },
-  () =>
-    withRoot((root) => {
-      const cwd = marker(directory(root, 'cwd'));
-      const scriptRoot = directory(root, 'layout/projects/repos/repo/scripts');
-      const runExplicit = invoke({ explicitSpecified: true, explicitValue: ' ', cwd, scriptRoot });
-      assert.equal(runExplicit.status, 23);
-      assert.match(runExplicit.stderr, /-Workspace was explicitly supplied but is empty/);
-      const runEnv = invoke({ envWorkspace: join(root, 'missing'), cwd, scriptRoot });
-      assert.equal(runEnv.status, 23);
-      assert.match(runEnv.stderr, /MAXSTACK_WORKSPACE target does not exist/);
-      const runEmptyEnv = invoke({ envWorkspace: '', cwd, scriptRoot });
-      assert.equal(runEmptyEnv.status, 23);
-      assert.match(runEmptyEnv.stderr, /MAXSTACK_WORKSPACE is set but empty/);
-    }),
+test('explicit empty and invalid environment targets fail without falling through', {}, () =>
+  withRoot((root) => {
+    const cwd = marker(directory(root, 'cwd'));
+    const scriptRoot = directory(root, 'layout/projects/repos/repo/scripts');
+    const runExplicit = invoke({ explicitSpecified: true, explicitValue: ' ', cwd, scriptRoot });
+    assert.equal(runExplicit.status, 23);
+    assert.match(runExplicit.stderr, /-Workspace was explicitly supplied but is empty/);
+    const runEnv = invoke({ envWorkspace: join(root, 'missing'), cwd, scriptRoot });
+    assert.equal(runEnv.status, 23);
+    assert.match(runEnv.stderr, /MAXSTACK_WORKSPACE target does not exist/);
+    const runEmptyEnv = invoke({ envWorkspace: '', cwd, scriptRoot });
+    assert.equal(runEmptyEnv.status, 23);
+    assert.match(runEmptyEnv.stderr, /MAXSTACK_WORKSPACE is set but empty/);
+  }),
 );
 
-test(
-  'a non-filesystem current location without a script layout refuses discovery',
-  { skip: !shell },
-  () =>
-    withRoot((root) => {
-      resolveFails(
-        { nonFilesystem: true, cwd: root, scriptRoot: join(root, 'no-layout', 'scripts') },
-        'Workspace discovery failed',
-      );
-    }),
-);
-
-test('missing explicit target fails instead of using a marker or layout', { skip: !shell }, () =>
+test('missing explicit target fails instead of using a marker or layout', {}, () =>
   withRoot((root) => {
     const cwd = marker(directory(root, 'cwd'));
     const scriptRoot = directory(root, 'layout/projects/worktrees/repo/scripts');
@@ -309,7 +292,7 @@ test('missing explicit target fails instead of using a marker or layout', { skip
   }),
 );
 
-test('finding F11: missing workspace reports all four discovery sources', { skip: !shell }, () =>
+test('finding F11: missing workspace reports all four discovery sources', {}, () =>
   withRoot((root) => {
     const cwd = directory(root, 'cwd');
     const scriptRoot = directory(root, 'no/matching/layout/repo/scripts');
@@ -332,7 +315,7 @@ function assertRefused(options, pattern, label) {
 
 test(
   'a trailing separator on an explicit or environment path names the folder without it',
-  { skip: !shell },
+  {},
   () =>
     withRoot((root) => {
       const target = marker(directory(root, 'trailing'));
@@ -345,7 +328,7 @@ test(
     }),
 );
 
-test('a device path prefix is refused before any path lookup', { skip: !shell }, () =>
+test('a device path prefix is refused before any path lookup', {}, () =>
   withRoot((root) => {
     for (const value of [
       '\\\\?\\C:\\maxstack-missing',
@@ -367,7 +350,7 @@ test('a device path prefix is refused before any path lookup', { skip: !shell },
   }),
 );
 
-test('a UNC path is refused by its text, so no share is looked up', { skip: !shell }, () =>
+test('a UNC path is refused by its text, so no share is looked up', {}, () =>
   withRoot((root) => {
     assertRefused(
       { explicitSpecified: true, explicitValue: '\\\\maxstack-no-host\\share\\ws', cwd: root },
@@ -382,7 +365,7 @@ test('a UNC path is refused by its text, so no share is looked up', { skip: !she
   }),
 );
 
-test('an 8.3 short name is refused in an explicit or environment path', { skip: !shell }, () =>
+test('an 8.3 short name is refused in an explicit or environment path', {}, () =>
   withRoot((root) => {
     assertRefused(
       { explicitSpecified: true, explicitValue: join(root, 'PROGRA~1', 'ws'), cwd: root },
@@ -402,25 +385,22 @@ test('an 8.3 short name is refused in an explicit or environment path', { skip: 
   }),
 );
 
-test(
-  'a C1 control character is refused and shown as an escape, never echoed raw',
-  { skip: !shell },
-  () =>
-    withRoot((root) => {
-      const c1 = String.fromCharCode(0x9b);
-      const run = assertRefused(
-        { explicitSpecified: true, explicitValue: join(root, `bad${c1}name`), cwd: root },
-        /-Workspace path contains control characters/,
-        'C1',
-      );
-      assert.ok(run.stderr.includes('\\u009B'), run.stderr);
-      assert.equal(run.stderr.includes(c1), false, 'the raw C1 byte reached stderr');
-    }),
+test('a C1 control character is refused and shown as an escape, never echoed raw', {}, () =>
+  withRoot((root) => {
+    const c1 = String.fromCharCode(0x9b);
+    const run = assertRefused(
+      { explicitSpecified: true, explicitValue: join(root, `bad${c1}name`), cwd: root },
+      /-Workspace path contains control characters/,
+      'C1',
+    );
+    assert.ok(run.stderr.includes('\\u009B'), run.stderr);
+    assert.equal(run.stderr.includes(c1), false, 'the raw C1 byte reached stderr');
+  }),
 );
 
 test(
   'a directory named like a marker is not a marker, and the walk continues to the real one',
-  { skip: !shell },
+  {},
   () =>
     withRoot((root) => {
       const workspace = marker(directory(root, 'workspace'));
@@ -432,7 +412,7 @@ test(
 
 test(
   'two real markers at different depths: the nearest wins, and in one folder the settings file is named first',
-  { skip: !shell },
+  {},
   () =>
     withRoot((root) => {
       const outer = marker(directory(root, 'outer'), 'stack.lock.json');
@@ -447,7 +427,7 @@ test(
 
 test(
   'a marker reached through a junction keeps the path the walk reached, as upstream main does',
-  { skip: !shell },
+  {},
   () =>
     withRoot((root) => {
       const target = marker(directory(root, 'real-target'));
@@ -459,7 +439,7 @@ test(
 
 test(
   'an explicit target that is a junction keeps the given path; the resolved folder is only checked',
-  { skip: !shell },
+  {},
   () =>
     withRoot((root) => {
       const target = marker(directory(root, 'real-target'));
@@ -469,7 +449,7 @@ test(
     }),
 );
 
-test('a junction whose target is missing is refused as a missing target', { skip: !shell }, () =>
+test('a junction whose target is missing is refused as a missing target', {}, () =>
   withRoot((root) => {
     const link = join(root, 'dangling');
     symlinkSync(join(root, 'no-such-target'), link, 'junction');
@@ -483,7 +463,7 @@ test('a junction whose target is missing is refused as a missing target', { skip
 
 test(
   'a .git folder is never a workspace: an explicit target inside it is refused, and the walk skips it',
-  { skip: !shell },
+  {},
   () =>
     withRoot((root) => {
       const workspace = marker(directory(root, 'workspace'));
@@ -501,29 +481,26 @@ test(
     }),
 );
 
-test(
-  'a layer cache clone is never a workspace target, and the walk skips it',
-  { skip: !shell },
-  () =>
-    withRoot((root) => {
-      const workspace = marker(directory(root, 'workspace'));
-      const clone = marker(directory(workspace, '.claude/cache/pstack'));
-      assertRefused(
-        { envWorkspace: clone, cwd: root },
-        /MAXSTACK_WORKSPACE target is inside a git directory, a layer checkout, or a layer cache/,
-        'env cache clone',
-      );
-      resolveCase(
-        { cwd: directory(clone, 'plugins/pstack') },
-        workspace,
-        'cwd marker stack.lock.json',
-      );
-    }),
+test('a layer cache clone is never a workspace target, and the walk skips it', {}, () =>
+  withRoot((root) => {
+    const workspace = marker(directory(root, 'workspace'));
+    const clone = marker(directory(workspace, '.claude/cache/pstack'));
+    assertRefused(
+      { envWorkspace: clone, cwd: root },
+      /MAXSTACK_WORKSPACE target is inside a git directory, a layer checkout, or a layer cache/,
+      'env cache clone',
+    );
+    resolveCase(
+      { cwd: directory(clone, 'plugins/pstack') },
+      workspace,
+      'cwd marker stack.lock.json',
+    );
+  }),
 );
 
 test(
   'a checkout under projects\\repos or projects\\worktrees is never a workspace target, and the walk skips it',
-  { skip: !shell },
+  {},
   () =>
     withRoot((root) => {
       const workspace = marker(directory(root, 'workspace'));
@@ -539,7 +516,7 @@ test(
 
 test(
   'a script layout that lands inside a layer checkout is not a workspace and discovery refuses',
-  { skip: !shell },
+  {},
   () =>
     withRoot((root) => {
       const scriptRoot = directory(root, 'X/projects/repos/A/projects/repos/B/scripts');
@@ -547,31 +524,25 @@ test(
     }),
 );
 
-test(
-  'a script root at a drive root is not a layout, and the check does not fail',
-  { skip: !shell },
-  () =>
-    withRoot((root) => {
-      const drive = parse(root).root;
-      resolveFails(
-        { cwd: directory(root, 'outside'), scriptRoot: join(drive, 'scripts') },
-        'Workspace discovery failed',
-      );
-    }),
+test('a script root at a drive root is not a layout, and the check does not fail', {}, () =>
+  withRoot((root) => {
+    const drive = parse(root).root;
+    resolveFails(
+      { cwd: directory(root, 'outside'), scriptRoot: join(drive, 'scripts') },
+      'Workspace discovery failed',
+    );
+  }),
 );
 
-test(
-  'a relative environment path with dot segments resolves from the current directory',
-  { skip: !shell },
-  () =>
-    withRoot((root) => {
-      const base = directory(root, 'base');
-      const sibling = marker(directory(root, 'sibling'));
-      resolveCase({ envWorkspace: `..${sep}sibling`, cwd: base }, sibling, 'MAXSTACK_WORKSPACE');
-    }),
+test('a relative environment path with dot segments resolves from the current directory', {}, () =>
+  withRoot((root) => {
+    const base = directory(root, 'base');
+    const sibling = marker(directory(root, 'sibling'));
+    resolveCase({ envWorkspace: `..${sep}sibling`, cwd: base }, sibling, 'MAXSTACK_WORKSPACE');
+  }),
 );
 
-test('an explicit target that is a file is refused as not a directory', { skip: !shell }, () =>
+test('an explicit target that is a file is refused as not a directory', {}, () =>
   withRoot((root) => {
     const file = join(root, 'not-a-folder.json');
     writeFileSync(file, '{}');
@@ -585,18 +556,19 @@ test('an explicit target that is a file is refused as not a directory', { skip: 
 
 test(
   'a missing target stops -Status, -Update -Check, and an apply, names the origin, and creates nothing',
-  { skip: !shell },
+  {},
   () =>
     withRoot((root) => {
       const target = join(root, 'missing-target');
       const env = { ...process.env };
       delete env.MAXSTACK_WORKSPACE;
       for (const extra of [['-Status'], ['-Update', '-Check'], ['-Apply']]) {
-        const run = spawnSync(
-          shell,
-          ['-NoProfile', '-NonInteractive', '-File', installer, '-Workspace', target, ...extra],
-          { windowsHide: true, encoding: 'utf8', cwd: root, env },
-        );
+        const run = spawnSync(process.execPath, [tsInstaller, '-Workspace', target, ...extra], {
+          windowsHide: true,
+          encoding: 'utf8',
+          cwd: root,
+          env,
+        });
         assert.notEqual(run.status, 0, `${extra.join(' ')} accepted a missing target`);
         assert.match(
           `${run.stdout}${run.stderr}`,
@@ -613,16 +585,17 @@ function runInstallerAudit(root, { cwd, workspaceArgs = [], env = {} }) {
   const childEnv = { ...process.env };
   delete childEnv.MAXSTACK_WORKSPACE;
   Object.assign(childEnv, env);
-  return spawnSync(
-    shell,
-    ['-NoProfile', '-NonInteractive', '-File', installer, ...workspaceArgs, '-Status'],
-    { windowsHide: true, encoding: 'utf8', cwd: cwd ?? root, env: childEnv },
-  );
+  return spawnSync(process.execPath, [tsInstaller, ...workspaceArgs, '-Status'], {
+    windowsHide: true,
+    encoding: 'utf8',
+    cwd: cwd ?? root,
+    env: childEnv,
+  });
 }
 
 test(
   'the installer uses MAXSTACK_WORKSPACE without -Workspace, names that origin, and never reads the current directory marker',
-  { skip: !shell },
+  {},
   () =>
     withRoot((root) => {
       const fromEnvironment = marker(directory(root, 'environment'));
@@ -638,7 +611,7 @@ test(
 
 test(
   'the installer prefers -Workspace to MAXSTACK_WORKSPACE and names the explicit origin',
-  { skip: !shell },
+  {},
   () =>
     withRoot((root) => {
       const explicit = marker(directory(root, 'explicit'));
@@ -658,7 +631,7 @@ test(
 
 test(
   'the installer walks from the current directory to a marker when neither flag nor environment names a target',
-  { skip: !shell },
+  {},
   () =>
     withRoot((root) => {
       const workspace = marker(directory(root, 'workspace'));
@@ -671,16 +644,13 @@ test(
     }),
 );
 
-test(
-  'unconfigured discovery refuses instead of selecting an implicit default',
-  { skip: !shell },
-  () =>
-    withRoot((root) => {
-      resolveFails(
-        { cwd: directory(root, 'outside'), scriptRoot: join(root, 'no-layout', 'scripts') },
-        'Workspace discovery failed',
-      );
-    }),
+test('unconfigured discovery refuses instead of selecting an implicit default', {}, () =>
+  withRoot((root) => {
+    resolveFails(
+      { cwd: directory(root, 'outside'), scriptRoot: join(root, 'no-layout', 'scripts') },
+      'Workspace discovery failed',
+    );
+  }),
 );
 
 // A run that must find no workspace: exit 23 and the named message.
@@ -691,12 +661,12 @@ function resolveFails(options, message) {
   return run;
 }
 
-// A maxstack checkout as this repository ships it: scripts/Install-Workspace.ps1, layers.json, and a workspace folder
+// A maxstack checkout as this repository ships it: scripts/install/main.ts, layers.json, and a workspace folder
 // that carries the seed settings file and the tracked config. Nothing here is a real workspace.
 function makeCheckout(parent, name) {
   const clone = directory(parent, name);
-  directory(clone, 'scripts');
-  writeFileSync(join(clone, 'scripts', 'Install-Workspace.ps1'), '');
+  directory(clone, 'scripts/install');
+  writeFileSync(join(clone, 'scripts', 'install', 'main.ts'), '');
   writeFileSync(join(clone, 'layers.json'), '{}');
   directory(clone, 'workspace');
   writeFileSync(join(clone, 'workspace', 'maxstack.settings.json'), '{}');
@@ -722,7 +692,7 @@ function snapshotFolder(folder) {
 
 test(
   'a maxstack checkout is not a workspace: the walk from its workspace folder skips it, and nothing resolves',
-  { skip: !shell },
+  {},
   () =>
     withRoot((root) => {
       const checkout = makeCheckout(root, 'clone');
@@ -733,23 +703,20 @@ test(
     }),
 );
 
-test(
-  'a checkout found by the walk from another maxstack clone is skipped too',
-  { skip: !shell },
-  () =>
-    withRoot((root) => {
-      const running = makeCheckout(root, 'running');
-      const foreign = makeCheckout(root, 'foreign');
-      resolveFails(
-        { cwd: join(foreign, 'workspace'), scriptRoot: join(running, 'scripts') },
-        'Workspace discovery failed',
-      );
-    }),
+test('a checkout found by the walk from another maxstack clone is skipped too', {}, () =>
+  withRoot((root) => {
+    const running = makeCheckout(root, 'running');
+    const foreign = makeCheckout(root, 'foreign');
+    resolveFails(
+      { cwd: join(foreign, 'workspace'), scriptRoot: join(running, 'scripts') },
+      'Workspace discovery failed',
+    );
+  }),
 );
 
 test(
   'an explicit or environment target that is a maxstack checkout is refused, and its workspace folder too',
-  { skip: !shell },
+  {},
   () =>
     withRoot((root) => {
       const checkout = makeCheckout(root, 'clone');
@@ -771,62 +738,53 @@ test(
 
 test(
   'a no-flag apply from a checkout workspace folder writes nothing into the clone and fails',
-  { skip: !shell },
+  {},
   () =>
     withRoot((root) => {
       const clone = join(root, 'clone');
       mkdirSync(join(clone, 'scripts'), { recursive: true });
       cpSync(join(repoRoot, 'scripts'), join(clone, 'scripts'), { recursive: true });
       cpSync(join(repoRoot, 'workspace'), join(clone, 'workspace'), { recursive: true });
-      const copy = join(clone, 'scripts', 'Install-Workspace.ps1');
+      const copy = join(clone, 'scripts', 'install', 'main.ts');
       const before = snapshotFolder(clone);
       const env = { ...process.env };
       delete env.MAXSTACK_WORKSPACE;
       // An empty manifest keeps the run offline: the copied layers.json names a remote pstack source that must not be looked up.
       const emptyLayers = join(root, 'empty-layers.json');
       writeFileSync(emptyLayers, '{"layers":[]}');
-      const run = spawnSync(
-        shell,
-        ['-NoProfile', '-NonInteractive', '-File', copy, '-Apply', '-LayersFile', emptyLayers],
-        { windowsHide: true, encoding: 'utf8', cwd: join(clone, 'workspace'), env },
-      );
+      const run = spawnSync(process.execPath, [copy, '-Apply', '-LayersFile', emptyLayers], {
+        windowsHide: true,
+        encoding: 'utf8',
+        cwd: join(clone, 'workspace'),
+        env,
+      });
       assert.notEqual(run.status, 0, `${run.stdout}${run.stderr}`);
       assert.deepEqual(snapshotFolder(clone), before, 'a run from a checkout changed the checkout');
     }),
 );
 
-test(
-  'a current directory with an 8.3 segment does not stop the script layout',
-  { skip: !shell },
-  () =>
-    withRoot((root) => {
-      const workspace = directory(root, 'ws');
-      const scriptRoot = directory(workspace, 'projects/repos/repo/scripts');
-      resolveCase(
-        { cwd: directory(root, 'LONGER~1/child'), scriptRoot },
-        workspace,
-        'script layout',
-      );
-    }),
+test('a current directory with an 8.3 segment does not stop the script layout', {}, () =>
+  withRoot((root) => {
+    const workspace = directory(root, 'ws');
+    const scriptRoot = directory(workspace, 'projects/repos/repo/scripts');
+    resolveCase({ cwd: directory(root, 'LONGER~1/child'), scriptRoot }, workspace, 'script layout');
+  }),
 );
 
-test(
-  'a walk started in an 8.3-named folder still finds the marker that is there',
-  { skip: !shell },
-  () =>
-    withRoot((root) => {
-      const workspace = marker(directory(root, 'LONGER~1/ws'));
-      resolveCase(
-        { cwd: directory(workspace, 'child'), scriptRoot: join(root, 'no-layout', 'scripts') },
-        workspace,
-        'cwd marker stack.lock.json',
-      );
-    }),
+test('a walk started in an 8.3-named folder still finds the marker that is there', {}, () =>
+  withRoot((root) => {
+    const workspace = marker(directory(root, 'LONGER~1/ws'));
+    resolveCase(
+      { cwd: directory(workspace, 'child'), scriptRoot: join(root, 'no-layout', 'scripts') },
+      workspace,
+      'cwd marker stack.lock.json',
+    );
+  }),
 );
 
 test(
   'a literal folder whose name looks like an 8.3 short name is an accepted explicit target',
-  { skip: !shell || windowsOnly },
+  { skip: windowsOnly },
   () =>
     withRoot((root) => {
       for (const name of ['Q~1', 'ABCDEFGH~1']) {
@@ -840,25 +798,22 @@ test(
     }),
 );
 
-test(
-  'a non-existent name with eight characters before the tilde is not a short name',
-  { skip: !shell },
-  () =>
-    withRoot((root) => {
-      const run = invoke({
-        explicitSpecified: true,
-        explicitValue: join(root, 'ABCDEFGH~1'),
-        cwd: root,
-      });
-      assert.equal(run.status, 23, run.stdout + run.stderr);
-      assert.match(run.stderr, /-Workspace target does not exist or is not a directory/);
-      assert.doesNotMatch(run.stderr, /8\.3/);
-    }),
+test('a non-existent name with eight characters before the tilde is not a short name', {}, () =>
+  withRoot((root) => {
+    const run = invoke({
+      explicitSpecified: true,
+      explicitValue: join(root, 'ABCDEFGH~1'),
+      cwd: root,
+    });
+    assert.equal(run.status, 23, run.stdout + run.stderr);
+    assert.match(run.stderr, /-Workspace target does not exist or is not a directory/);
+    assert.doesNotMatch(run.stderr, /8\.3/);
+  }),
 );
 
 test(
   'a script layout that names another workspace is noted when a marker wins, once and with both targets',
-  { skip: !shell },
+  {},
   () =>
     withRoot((root) => {
       const layoutWorkspace = marker(directory(root, 'layout-ws'));
@@ -877,7 +832,7 @@ test(
 
 test(
   'a script layout that names the same workspace as the environment target gives no note',
-  { skip: !shell },
+  {},
   () =>
     withRoot((root) => {
       const layoutWorkspace = marker(directory(root, 'layout-ws'));
@@ -892,7 +847,7 @@ test(
 
 test(
   'an environment target that differs from the script layout is noted under its origin',
-  { skip: !shell },
+  {},
   () =>
     withRoot((root) => {
       const layoutWorkspace = marker(directory(root, 'layout-ws'));
@@ -907,102 +862,25 @@ test(
     }),
 );
 
-test(
-  'a drive root is refused as an explicit or environment target before any lookup',
-  { skip: !shell },
-  () =>
-    withRoot((root) => {
-      const driveRoot = parse(root).root;
-      assertRefused(
-        { explicitSpecified: true, explicitValue: driveRoot, cwd: root },
-        /-Workspace target is a drive root, not a workspace/,
-        '-Workspace drive root',
-      );
-      assertRefused(
-        { envWorkspace: driveRoot, cwd: root },
-        /MAXSTACK_WORKSPACE target is a drive root, not a workspace/,
-        'MAXSTACK_WORKSPACE drive root',
-      );
-    }),
-);
-
-function usedDriveLetters() {
-  const listing = spawnSync(
-    shell,
-    ['-NoProfile', '-Command', '[IO.DriveInfo]::GetDrives().Name -join ","'],
-    { windowsHide: true, encoding: 'utf8' },
-  );
-  return new Set(
-    listing.stdout
-      .trim()
-      .split(',')
-      .map((name) => name[0]),
-  );
-}
-
-// Maps a free drive letter to a folder for the body, and removes the mapping after it. Skips the test when no letter
-// is free or subst refuses the mapping.
-function withSubstDrive(t, body) {
-  const used = usedDriveLetters();
-  const letter = ['Y', 'X', 'W', 'V', 'U', 'T', 'S', 'R', 'Q', 'P', 'O', 'N', 'M'].find(
-    (name) => !used.has(name),
-  );
-  if (!letter) {
-    t.skip('no free drive letter for subst');
-    return;
-  }
+test('a drive root is refused as an explicit or environment target before any lookup', {}, () =>
   withRoot((root) => {
-    const mapped = directory(root, 'mapped');
-    const map = spawnSync('subst', [`${letter}:`, mapped], { windowsHide: true, encoding: 'utf8' });
-    if (map.status !== 0) {
-      t.skip(`subst could not map a drive here: ${map.stderr.trim() || map.stdout.trim()}`);
-      return;
-    }
-    try {
-      body(root, `${letter}:`);
-    } finally {
-      spawnSync('subst', [`${letter}:`, '/D'], { windowsHide: true, encoding: 'utf8' });
-    }
-  });
-}
-
-test(
-  'a marker in a drive root is skipped by the walk, so a no-flag run does not abort',
-  { skip: !shell || windowsOnly },
-  (t) =>
-    withSubstDrive(t, (root, drive) => {
-      writeFileSync(`${drive}\stack.lock.json`, '{}');
-      directory(drive + '\\', 'child');
-      resolveFails(
-        { cwd: `${drive}\child`, scriptRoot: join(root, 'no-layout', 'scripts') },
-        'Workspace discovery failed',
-      );
-    }),
-);
-
-// A folder whose link target cannot be read makes the walk's resolution throw. The seam replaces the resolver after the
-// helper loads, so the walk meets the failure a real junction or drive root can cause.
-test(
-  'a walk candidate whose folder cannot be resolved is skipped, and the run does not abort',
-  { skip: !shell },
-  () =>
-    withRoot((root) => {
-      const workspace = marker(directory(root, 'ws'));
-      resolveFails(
-        {
-          cwd: directory(workspace, 'child'),
-          scriptRoot: join(root, 'no-layout', 'scripts'),
-          prelude:
-            "function Get-MaxstackFinalDirectory { param([string] $Path) if ($Path -like '*\ws') { throw 'simulated link failure' }; return [IO.Path]::TrimEndingDirectorySeparator((Get-Item -LiteralPath $Path -Force).FullName) }",
-        },
-        'Workspace discovery failed',
-      );
-    }),
+    const driveRoot = parse(root).root;
+    assertRefused(
+      { explicitSpecified: true, explicitValue: driveRoot, cwd: root },
+      /-Workspace target is a drive root, not a workspace/,
+      '-Workspace drive root',
+    );
+    assertRefused(
+      { envWorkspace: driveRoot, cwd: root },
+      /MAXSTACK_WORKSPACE target is a drive root, not a workspace/,
+      'MAXSTACK_WORKSPACE drive root',
+    );
+  }),
 );
 
 test(
   'the installer prints the resolved line first and the layout note once, as a warning',
-  { skip: !shell },
+  {},
   () =>
     withRoot((root) => {
       const layoutWorkspace = marker(directory(root, 'layout-ws'));
@@ -1015,16 +893,8 @@ test(
       const env = { ...process.env };
       delete env.MAXSTACK_WORKSPACE;
       const run = spawnSync(
-        shell,
-        [
-          '-NoProfile',
-          '-NonInteractive',
-          '-File',
-          join(copyRepo, 'scripts', 'Install-Workspace.ps1'),
-          '-LayersFile',
-          emptyLayers,
-          '-Status',
-        ],
+        process.execPath,
+        [join(copyRepo, 'scripts', 'install', 'main.ts'), '-LayersFile', emptyLayers, '-Status'],
         { windowsHide: true, encoding: 'utf8', cwd: directory(markerWorkspace, 'child'), env },
       );
       const lines = run.stdout.split(/\r?\n/);
@@ -1045,21 +915,14 @@ test(
 );
 
 // The display of a string built from UTF-16 code units, through the helper's escape function. A lone surrogate cannot pass
-// through the UTF-8 channel of the other tests, so the units are built inside the child shell.
+// through the UTF-8 channel of the other tests, so the units are built here.
 function displayOf(codeUnits) {
-  const ordinal = join(dirname(helper), 'Install-Ordinal.ps1');
-  const command = `[Console]::OutputEncoding = [Text.Encoding]::UTF8; . '${ordinal.replaceAll("'", "''")}'; . '${helper.replaceAll("'", "''")}'; $s = -join ([char[]]@(${codeUnits.join(',')})); ConvertTo-SafeName $s`;
-  const run = spawnSync(shell, ['-NoProfile', '-Command', command], {
-    windowsHide: true,
-    encoding: 'utf8',
-  });
-  assert.equal(run.status, 0, run.stderr);
-  return run.stdout.replace(/\r?\n$/, '');
+  return safeName(String.fromCharCode(...codeUnits));
 }
 
 test(
   'the display escapes a lone surrogate, a format character, and a line separator, and keeps plain text',
-  { skip: !shell },
+  {},
   () => {
     assert.equal(
       displayOf([0xd800, 0x41, 0x200b, 0x2028, 0x200d, 0x42]),
@@ -1070,7 +933,7 @@ test(
 
 test(
   'a bidi override, an isolate, or a line separator in a user-supplied path is refused, with the escape shown',
-  { skip: !shell },
+  {},
   () =>
     withRoot((root) => {
       for (const code of [0x202e, 0x2066, 0x2028, 0x2029]) {
@@ -1096,7 +959,7 @@ test(
 
 test(
   'a zero width joiner in a user-supplied path is refused by its text, and shown as an escape in the error',
-  { skip: !shell },
+  {},
   () =>
     withRoot((root) => {
       const missing = join(root, `miss${String.fromCharCode(0x200d)}ing`);
@@ -1117,7 +980,7 @@ test(
 
 test(
   'the installer refuses a zero width space in its -Workspace value, and shows it as an escape',
-  { skip: !shell },
+  {},
   () =>
     withRoot((root) => {
       const withSpace = join(root, `a${String.fromCharCode(0x200b)}b`);
@@ -1136,7 +999,7 @@ test(
 
 test(
   'a display longer than 260 characters is cut and marked with an ellipsis',
-  { skip: !shell || windowsOnly },
+  { skip: windowsOnly },
   () =>
     withRoot((root) => {
       const long = join(root, 'a'.repeat(300));
@@ -1151,7 +1014,7 @@ test(
 // location they would name a folder the user did not give. They are refused, and nothing is looked up.
 test(
   'a drive-relative or root-relative user value is refused, and never resolved against the process location',
-  { skip: !shell || windowsOnly },
+  { skip: windowsOnly },
   () =>
     withRoot((root) => {
       const drive = parse(root).root.slice(0, 2);
@@ -1175,68 +1038,37 @@ test(
     }),
 );
 
-test(
-  'POSIX absolute workspace paths follow injected macOS discovery rules',
-  { skip: !shell },
-  () => {
-    const helperPath = helper.replaceAll("'", "''");
-    const ordinal = join(repoRoot, 'scripts', 'Install-Ordinal.ps1').replaceAll("'", "''");
-    const paths = join(repoRoot, 'scripts', 'Install-Paths.ps1').replaceAll("'", "''");
-    const command = `. '${ordinal}'; . '${paths}'; . '${helperPath}'; $full = ConvertTo-MaxstackFullPath '/Users/name/dev/workspace' '-Workspace' (Get-Location).Path 'macOS'; if (-not (Test-MaxstackAbsolutePath '/Users/name/dev/workspace' 'macOS')) { throw 'POSIX path was not absolute under macOS rules' }; if (-not $full) { throw 'POSIX path did not resolve' }`;
-    const run = spawnSync(shell, ['-NoProfile', '-NonInteractive', '-Command', command], {
-      windowsHide: true,
-      encoding: 'utf8',
-    });
-    assert.equal(run.status, 0, `${run.stdout}\n${run.stderr}`);
-  },
-);
+test('POSIX absolute workspace paths follow injected macOS discovery rules', {}, () => {
+  assert.equal(maxstackAbsolutePath('/Users/name/dev/workspace', 'macOS'), true);
+  assert.equal(
+    convertToMaxstackPath('/Users/name/dev/workspace', 'macOS'),
+    '/Users/name/dev/workspace',
+  );
+});
 
 // The repo root is excluded as a folder and everything under it. A sibling whose name only starts with the same letters is not under it.
-test(
-  'a folder whose name only starts with the repo root name is not under the repo root',
-  { skip: !shell },
-  () =>
-    withRoot((root) => {
-      const checkout = makeCheckout(root, 'clone');
-      const sibling = marker(directory(root, 'clone-ws'));
-      resolveCase(
-        {
-          explicitSpecified: true,
-          explicitValue: sibling,
-          cwd: root,
-          scriptRoot: join(checkout, 'scripts'),
-        },
-        sibling,
-        '-Workspace',
-      );
-    }),
-);
-
-// The resolved line is host output, like every other line the installer prints. A captured run therefore returns nothing,
-// as upstream main does.
-test(
-  'a captured installer run returns nothing: the resolved line is written to the host, not the success stream',
-  { skip: !shell },
-  () =>
-    withRoot((root) => {
-      const target = directory(root, 'captured');
-      writeFileSync(join(target, 'maxstack.settings.json'), '{"version":1}');
-      const command = `$x = & '${installer.replaceAll("'", "''")}' -Workspace '${target.replaceAll("'", "''")}' -Status; 'COUNT=' + @($x).Count`;
-      const run = spawnSync(shell, ['-NoProfile', '-NonInteractive', '-Command', command], {
-        windowsHide: true,
-        encoding: 'utf8',
+test('a folder whose name only starts with the repo root name is not under the repo root', {}, () =>
+  withRoot((root) => {
+    const checkout = makeCheckout(root, 'clone');
+    const sibling = marker(directory(root, 'clone-ws'));
+    resolveCase(
+      {
+        explicitSpecified: true,
+        explicitValue: sibling,
         cwd: root,
-        env: { ...process.env, MAXSTACK_WORKSPACE: '' },
-      });
-      assert.match(run.stdout, /^COUNT=0\r?$/m, run.stdout + run.stderr);
-    }),
+        scriptRoot: join(checkout, 'scripts'),
+      },
+      sibling,
+      '-Workspace',
+    );
+  }),
 );
 
 // Kills the mutants that drop projects\worktrees from the internal pair, resolve a relative value against the process
 // location instead of the current directory, and skip the final-folder text check.
 test(
   'a checkout in a projects worktrees folder is refused as an explicit target and skipped by the walk, like a projects repos folder',
-  { skip: !shell },
+  {},
   () =>
     withRoot((root) => {
       const workspace = marker(directory(root, 'workspace'));
@@ -1252,7 +1084,7 @@ test(
 
 test(
   'a relative explicit value resolves against the given current directory, not the process location',
-  { skip: !shell },
+  {},
   () =>
     withRoot((root) => {
       const base = directory(root, 'base');
@@ -1268,7 +1100,7 @@ test(
 
 test(
   'a junction whose target folder has a bidi override in its name is refused, though the link name is plain',
-  { skip: !shell },
+  {},
   () =>
     withRoot((root) => {
       const bidiName = `real${String.fromCharCode(0x202e)}target`;
@@ -1288,7 +1120,7 @@ test(
 // left as it was. An empty layers manifest keeps the run offline.
 test(
   '-Remove and -Uninstall refuse a linked stack.lock.json and leave its target untouched',
-  { skip: !shell },
+  {},
   () =>
     withRoot((root) => {
       const workspace = directory(root, 'ws');
@@ -1332,52 +1164,46 @@ test(
 
 // A marker that is a hard link is an ordinary file: it names the folder it sits in, as a copy would. Only a reparse point
 // (a symbolic link or a junction) is refused as a marker.
-test(
-  'a marker that is a hard link is an ordinary file and identifies its folder',
-  { skip: !shell },
-  () =>
-    withRoot((root) => {
-      const workspace = directory(root, 'workspace');
-      const source = join(root, 'source.json');
-      writeFileSync(source, '{}');
-      linkSync(source, join(workspace, 'stack.lock.json'));
-      resolveCase(
-        { cwd: directory(workspace, 'child'), scriptRoot: join(root, 'no-layout', 'scripts') },
-        workspace,
-        'cwd marker stack.lock.json',
-      );
-    }),
+test('a marker that is a hard link is an ordinary file and identifies its folder', {}, () =>
+  withRoot((root) => {
+    const workspace = directory(root, 'workspace');
+    const source = join(root, 'source.json');
+    writeFileSync(source, '{}');
+    linkSync(source, join(workspace, 'stack.lock.json'));
+    resolveCase(
+      { cwd: directory(workspace, 'child'), scriptRoot: join(root, 'no-layout', 'scripts') },
+      workspace,
+      'cwd marker stack.lock.json',
+    );
+  }),
 );
 
 // A file symbolic link needs the symbolic-link privilege. Where it is missing the test is skipped with that reason.
-test(
-  'a marker that is a file symbolic link is not a marker, and the walk goes on',
-  { skip: !shell },
-  (t) =>
-    withRoot((root) => {
-      const workspace = directory(root, 'workspace');
-      const source = join(root, 'source.json');
-      writeFileSync(source, '{}');
-      try {
-        symlinkSync(source, join(workspace, 'stack.lock.json'), 'file');
-      } catch (error) {
-        if (error.code === 'EPERM') {
-          t.skip('the symbolic-link privilege is unavailable in this environment');
-          return;
-        }
-        throw error;
+test('a marker that is a file symbolic link is not a marker, and the walk goes on', {}, (t) =>
+  withRoot((root) => {
+    const workspace = directory(root, 'workspace');
+    const source = join(root, 'source.json');
+    writeFileSync(source, '{}');
+    try {
+      symlinkSync(source, join(workspace, 'stack.lock.json'), 'file');
+    } catch (error) {
+      if (error.code === 'EPERM') {
+        t.skip('the symbolic-link privilege is unavailable in this environment');
+        return;
       }
-      resolveFails(
-        { cwd: directory(workspace, 'child'), scriptRoot: join(root, 'no-layout', 'scripts') },
-        'Workspace discovery failed',
-      );
-    }),
+      throw error;
+    }
+    resolveFails(
+      { cwd: directory(workspace, 'child'), scriptRoot: join(root, 'no-layout', 'scripts') },
+      'Workspace discovery failed',
+    );
+  }),
 );
 
 // A script layout that is itself a maxstack checkout is not a workspace, so discovery refuses.
 test(
   'a script layout that is a maxstack checkout is not a workspace, and discovery refuses',
-  { skip: !shell },
+  {},
   () =>
     withRoot((root) => {
       const checkout = makeCheckout(root, 'checkout');
@@ -1388,45 +1214,26 @@ test(
 
 // With no explicit or discovered target, the installer refuses before touching any folder.
 // The copied installer names an existing folder as its default, and an empty layers manifest keeps the run offline.
-test(
-  'finding F11: the installer refuses when no workspace source names a target',
-  { skip: !shell },
-  () =>
-    withRoot((root) => {
-      const copyScripts = join(directory(root, 'copy'), 'scripts');
-      mkdirSync(copyScripts, { recursive: true });
-      cpSync(join(repoRoot, 'scripts'), copyScripts, { recursive: true });
-      const copy = join(copyScripts, 'Install-Workspace.ps1');
-      const emptyLayers = join(root, 'empty-layers.json');
-      writeFileSync(emptyLayers, '{"layers":[]}');
-      const env = { ...process.env };
-      delete env.MAXSTACK_WORKSPACE;
-      const run = spawnSync(
-        shell,
-        ['-NoProfile', '-NonInteractive', '-File', copy, '-LayersFile', emptyLayers, '-Status'],
-        { windowsHide: true, encoding: 'utf8', cwd: directory(root, 'outside'), env },
-      );
-      assert.notEqual(run.status, 0, `${run.stdout}${run.stderr}`);
-      assert.match(
-        `${run.stdout}${run.stderr}`,
-        /Workspace discovery failed.*-Workspace.*MAXSTACK_WORKSPACE.*cwd marker.*script layout/is,
-      );
-    }),
-);
-
-// The walk ignores a marker that is a link. Here the link predicate is replaced after the helper loads, because a file symbolic
-// link cannot be created in this environment; the predicate itself is exercised by the reparse-point tests.
-test('the walk ignores a marker that is a link, whatever its kind', { skip: !shell }, () =>
+test('finding F11: the installer refuses when no workspace source names a target', {}, () =>
   withRoot((root) => {
-    const workspace = marker(directory(root, 'ws'));
-    resolveFails(
-      {
-        cwd: directory(workspace, 'child'),
-        scriptRoot: join(root, 'no-layout', 'scripts'),
-        prelude:
-          "function Test-MaxstackLinkedPath { param([string] $Path) return $Path -like '*stack.lock.json' }",
-      },
-      'Workspace discovery failed',
+    const copyScripts = join(directory(root, 'copy'), 'scripts');
+    mkdirSync(copyScripts, { recursive: true });
+    cpSync(join(repoRoot, 'scripts'), copyScripts, { recursive: true });
+    const copy = join(copyScripts, 'install', 'main.ts');
+    const emptyLayers = join(root, 'empty-layers.json');
+    writeFileSync(emptyLayers, '{"layers":[]}');
+    const env = { ...process.env };
+    delete env.MAXSTACK_WORKSPACE;
+    const run = spawnSync(process.execPath, [copy, '-LayersFile', emptyLayers, '-Status'], {
+      windowsHide: true,
+      encoding: 'utf8',
+      cwd: directory(root, 'outside'),
+      env,
+    });
+    assert.notEqual(run.status, 0, `${run.stdout}${run.stderr}`);
+    assert.match(
+      `${run.stdout}${run.stderr}`,
+      /Workspace discovery failed.*-Workspace.*MAXSTACK_WORKSPACE.*cwd marker.*script layout/is,
     );
   }),
 );

@@ -33,8 +33,6 @@ import {
   ZWSP,
   assertOk,
   buildWorkspace,
-  clearInstallOutputs,
-  exportMainInstaller,
   gitRun,
   githubEnv,
   independentSha,
@@ -60,8 +58,6 @@ import {
   setLock,
   settingsPath,
   sha256Upper,
-  shell,
-  skip,
   snapshotTree,
   sourceBlockIn,
   sourceBlockOf,
@@ -70,14 +66,12 @@ import {
   testEnvironment,
   verifyManifestsScript,
   windowsOnly,
-  withMainCommit,
   withWindowsWorkspace,
   withWorkspace,
   workspaceFiles,
   workspacePath,
   writeFile,
   writeLayerStub,
-  writeLayers,
   writeWorkspaceSettings,
 } from './lib/installer-test-kit.mjs';
 
@@ -172,7 +166,7 @@ withWorkspace(
       /layers\.[a-z-]+\.source/,
       'an apply does not report a declared source that matches the lock',
     );
-    const status = runInstaller(shell, ctx, ['-Status', '-Strict'], { apply: false });
+    const status = runInstaller(ctx, ['-Status', '-Strict'], { apply: false });
     assert.equal(status.status, 0, plainOutput(status));
     assert.match(
       status.stdout,
@@ -186,7 +180,7 @@ withWorkspace(
     assert.doesNotMatch(status.stdout, /recorded but not applied/);
 
     writeWorkspaceSettings(ctx, { version: 1, runtimes: { claude: {} }, layers: { pstack: {} } });
-    const withoutSource = runInstaller(shell, ctx, ['-Status'], { apply: false });
+    const withoutSource = runInstaller(ctx, ['-Status'], { apply: false });
     assert.doesNotMatch(withoutSource.stdout, /layers\.[a-z-]+\.source/);
   },
   {},
@@ -203,7 +197,7 @@ withWorkspace(
     mustApply(ctx);
     writeWorkspaceSettings(ctx, { version: 1, runtimes: { claude: {} }, layers: { pstack: {} } });
     mustApply(ctx);
-    const status = runInstaller(shell, ctx, ['-Status', '-Strict'], { apply: false });
+    const status = runInstaller(ctx, ['-Status', '-Strict'], { apply: false });
     assert.equal(status.status, 1, plainOutput(status));
     assert.match(
       plainOutput(status),
@@ -226,7 +220,7 @@ withWorkspace(
     mustApply(ctx);
     writeWorkspaceSettings(ctx, { version: 1, runtimes: { claude: {} }, layers: { pstack: {} } });
     mustApply(ctx);
-    const status = runInstaller(shell, ctx, ['-Status', '-Strict'], { apply: false });
+    const status = runInstaller(ctx, ['-Status', '-Strict'], { apply: false });
     assert.equal(status.status, 1, plainOutput(status));
     assert.match(
       plainOutput(status),
@@ -249,7 +243,7 @@ withWorkspace(
       'default',
     ]) {
       writeWorkspaceSettings(ctx, { version: 1, layers: { pstack: { source } } });
-      assertOk(runInstaller(shell, ctx, [], { apply: false }));
+      assertOk(runInstaller(ctx, [], { apply: false }));
     }
     let refusedCount = 0;
     for (const source of [
@@ -265,7 +259,7 @@ withWorkspace(
       const trace = join(ctx.base, `refused-${refusedCount}.trace`);
       refusedCount += 1;
       writeWorkspaceSettings(ctx, { version: 1, layers: { pstack: { source } } });
-      const run = runInstaller(shell, ctx, [], {
+      const run = runInstaller(ctx, [], {
         apply: false,
         env: { ...testEnvironment(), GIT_TRACE: trace },
       });
@@ -300,7 +294,7 @@ withWorkspace(
     const before = lockText(ctx);
     const treeBefore = snapshotTree(ctx.workspace);
     for (const args of [[], ['-Status']]) {
-      const run = runInstaller(shell, ctx, args, { apply: args.length === 0 });
+      const run = runInstaller(ctx, args, { apply: args.length === 0 });
       assert.notEqual(run.status, 0, `${args.join(' ') || 'apply'}: ${plainOutput(run)}`);
       assert.match(
         plainOutput(run),
@@ -330,7 +324,7 @@ withWorkspace(
     for (const flag of ['-Source', '-LayerSource']) {
       const value =
         flag === '-Source' ? `org-ai-plugin${ZWSP}=local:${extB}` : `org-ai-plugin${ZWSP}=${extB}`;
-      const run = runInstaller(shell, ctx, [flag, value]);
+      const run = runInstaller(ctx, [flag, value]);
       assert.notEqual(run.status, 0, `${flag}: ${plainOutput(run)}`);
       assert.match(
         plainOutput(run),
@@ -353,7 +347,7 @@ withWorkspace(
       runtimes: { claude: {}, opencode: {}, copilot: {}, pi: {} },
       layers: { pstack: { source: 'local:nope' }, 'org-ai-plugin': {}, 'personal-ai-plugin': {} },
     });
-    const status = runInstaller(shell, ctx, ['-Status', '-Strict'], { apply: false });
+    const status = runInstaller(ctx, ['-Status', '-Strict'], { apply: false });
     assert.equal(status.status, 0, plainOutput(status));
     const rows = statusRows(status).filter((row) => /pstack/.test(row.label));
     assert.ok(
@@ -374,7 +368,7 @@ withWorkspace(
   (ctx) => {
     mustApply(ctx);
     writeWorkspaceSettings(ctx, { version: 1, layers: { pstack: { source: 'sample/nope@main' } } });
-    const status = runInstaller(shell, ctx, ['-Status'], { apply: false, env: githubEnv(ctx) });
+    const status = runInstaller(ctx, ['-Status'], { apply: false, env: githubEnv(ctx) });
     assertOk(status, plainOutput(status));
     assert.match(
       plainOutput(status),
@@ -394,7 +388,7 @@ withWorkspace(
       '{\n  "model": "opencode-go/deepseek-v4.1-flash"\n}\n',
     );
 
-    const audit = runInstaller(shell, ctx, [], { apply: false });
+    const audit = runInstaller(ctx, [], { apply: false });
     assert.equal(audit.status, 0, audit.stderr);
     assert.match(audit.stdout, /Drift: +.*opencode\.jsonc: differs/, audit.stdout);
     assert.match(
@@ -415,7 +409,7 @@ withWorkspace(
 withWorkspace(
   'audit reports drift in every runtime and writes nothing',
   (ctx) => {
-    const before = runInstaller(shell, ctx, [], { apply: false });
+    const before = runInstaller(ctx, [], { apply: false });
     assert.equal(before.status, 0, before.stderr);
     for (const child of ['org-ai-plugin', 'personal-ai-plugin', 'pstack']) {
       assert.match(
@@ -445,7 +439,7 @@ withWorkspace(
     );
     appendFileSync(skill, 'hand edit\n');
 
-    const drifted = runInstaller(shell, ctx, [], { apply: false });
+    const drifted = runInstaller(ctx, [], { apply: false });
     assert.match(drifted.stdout, /plugins[\\/]pstack: differs/);
     assert.match(readFileSync(skill, 'utf8'), /hand edit/, 'audit changed the drifted file');
 
@@ -724,12 +718,12 @@ withWorkspace(
       'projects/repos/org-ai-plugin/skills/new-skill/SKILL.md',
       '---\nname: new-skill\ndescription: fixture\n---\nbody\n',
     );
-    const audit = runInstaller(shell, ctx, [], { apply: false });
+    const audit = runInstaller(ctx, [], { apply: false });
     const status = runStatus(ctx);
     assert.match(audit.stdout, /\.opencode[\\/]+plugins[\\/]+org-ai-plugin: drifted/, audit.stdout);
     assert.match(status.stdout, /drifted\s+\.opencode\/plugins\/org-ai-plugin/, status.stdout);
     mustApply(ctx);
-    const matchingAudit = runInstaller(shell, ctx, [], { apply: false });
+    const matchingAudit = runInstaller(ctx, [], { apply: false });
     const matchingStatus = runStatus(ctx);
     assert.match(
       matchingAudit.stdout,
@@ -749,7 +743,7 @@ withWorkspace(
   'finding new workspace audit: local sources can be audited before the first lock exists',
   (ctx) => {
     const source = `pstack=local:${ctx.fixture.dir}`;
-    const audit = runInstaller(shell, ctx, ['-Source', source], { apply: false });
+    const audit = runInstaller(ctx, ['-Source', source], { apply: false });
     assert.equal(audit.status, 0, plainOutput(audit));
     assert.match(audit.stdout, /\.opencode[\\/]+plugins[\\/]+pstack: missing/, audit.stdout);
     assert.equal(existsSync(lockPath(ctx)), false, 'a read-only first audit created a lock');
@@ -863,7 +857,7 @@ withWorkspace(
   'an npm install that writes a file beyond its lock and node_modules fails the apply, and writes no record',
   (ctx) => {
     ctx.env.FAKE_NPM_EXTRA = `${PSTACK_NPM_FOLDER}/extra.txt`;
-    const run = runInstaller(shell, ctx);
+    const run = runInstaller(ctx);
     assert.notEqual(run.status, 0, run.stdout);
     assert.match(
       plainOutput(run),
@@ -977,7 +971,7 @@ withWorkspace(
 withWorkspace(
   '-Status and -Apply together are refused',
   (ctx) => {
-    const run = runInstaller(shell, ctx, ['-Status']);
+    const run = runInstaller(ctx, ['-Status']);
     assert.notEqual(run.status, 0, 'the installer accepted -Status with -Apply');
     assert.match(plainOutput(run), /Choose one/);
   },
@@ -1052,7 +1046,7 @@ withWorkspace(
       '.opencode/plugins/status-target';
     setLock(ctx, lock);
 
-    const status = runInstaller(shell, ctx, ['-Status'], { apply: false });
+    const status = runInstaller(ctx, ['-Status'], { apply: false });
     assert.equal(status.status, 0, plainOutput(status));
     assert.ok(
       statusRows(status).some((row) => row.state === 'drifted' && row.label === linkPath),
@@ -1191,7 +1185,7 @@ withWorkspace(
       ['truncated', good.slice(0, 120)],
     ]) {
       writeFileSync(lockPath(ctx), text);
-      const run = runInstaller(shell, ctx);
+      const run = runInstaller(ctx);
       assert.notEqual(run.status, 0, `${label}: apply accepted the lock`);
       const message = plainOutput(run);
       assert.match(
@@ -1209,7 +1203,7 @@ withWorkspace(
       assert.doesNotMatch(
         message,
         /StrictMode|PropertyNotFound|cannot be found on this object/,
-        `${label}: a PowerShell error leaked`,
+        `${label}: an internal error leaked`,
       );
       assert.equal(readFileSync(lockPath(ctx), 'utf8'), text, `${label}: the lock was changed`);
       assert.deepEqual(
@@ -1232,7 +1226,7 @@ withWorkspace(
     const before = readFileSync(lockPath(ctx));
     // A folder where the temporary file goes makes the write fail before the lock is replaced.
     mkdirSync(join(ctx.workspace, 'stack.lock.json.new'));
-    const failed = runInstaller(shell, ctx, ['-Runtimes', 'claude']);
+    const failed = runInstaller(ctx, ['-Runtimes', 'claude']);
     assert.notEqual(failed.status, 0, 'the installer ignored a failed write');
     assert.ok(before.equals(readFileSync(lockPath(ctx))), 'a failed write changed the lock');
     rmSync(join(ctx.workspace, 'stack.lock.json.new'), { recursive: true });
@@ -1458,7 +1452,7 @@ withWorkspace(
   (ctx) => {
     const { featCommit } = servedFeature(ctx);
     mustApply(ctx, ['-Source', 'pstack=simpsonm09/pstack-max@feat'], { env: githubEnv(ctx) });
-    const status = runInstaller(shell, ctx, ['-Status'], { apply: false, env: githubEnv(ctx) });
+    const status = runInstaller(ctx, ['-Status'], { apply: false, env: githubEnv(ctx) });
     assertOk(status);
 
     const block = sourceBlockOf(status.stdout);
@@ -1476,7 +1470,7 @@ withWorkspace(
   'a default workspace lists its local layers in the block and no git pin',
   (ctx) => {
     mustApply(ctx);
-    const status = runInstaller(shell, ctx, ['-Status'], { apply: false });
+    const status = runInstaller(ctx, ['-Status'], { apply: false });
     assertOk(status);
     const block = sourceBlockOf(status.stdout);
     assert.ok(block, status.stdout);
@@ -1497,7 +1491,7 @@ withWorkspace(
     const before = snapshotTree(ctx.workspace);
     const lockBefore = readFileSync(lockPath(ctx));
 
-    const check = runInstaller(shell, ctx, ['-Update', '-Check'], {
+    const check = runInstaller(ctx, ['-Update', '-Check'], {
       apply: false,
       env: githubEnv(ctx),
     });
@@ -1511,7 +1505,7 @@ withWorkspace(
     );
     assert.deepEqual(readFileSync(lockPath(ctx)), lockBefore, '-Update -Check changed the lock');
 
-    const strict = runInstaller(shell, ctx, ['-Update', '-Check', '-Strict'], {
+    const strict = runInstaller(ctx, ['-Update', '-Check', '-Strict'], {
       apply: false,
       env: githubEnv(ctx),
     });
@@ -1541,7 +1535,7 @@ withWorkspace(
     lock.layers.find((layer) => layer.name === 'org-ai-plugin').commit = LEGACY_COMMIT;
     setLock(ctx, lock);
 
-    const status = runInstaller(shell, ctx, ['-Status'], { apply: false });
+    const status = runInstaller(ctx, ['-Status'], { apply: false });
     assertOk(status);
     const text = sourceBlockOf(status.stdout).lines.join('\n');
     assert.match(
@@ -1565,14 +1559,14 @@ withWorkspace(
     const lock = readJson(lockPath(ctx));
     sourceBlockIn(lock, 'org-ai-plugin').path = 'relative/checkout';
     setLock(ctx, lock);
-    const status = runInstaller(shell, ctx, ['-Status'], { apply: false });
+    const status = runInstaller(ctx, ['-Status'], { apply: false });
     assertOk(status);
     assert.match(
       plainOutput(status),
       /layer 'org-ai-plugin' has an invalid path/,
       plainOutput(status),
     );
-    const apply = runInstaller(shell, ctx, []);
+    const apply = runInstaller(ctx, []);
     assert.notEqual(apply.status, 0, 'an apply wrote a layer whose recorded path is relative');
     assert.match(plainOutput(apply), /-Source org-ai-plugin=default -Apply/, plainOutput(apply));
   },
@@ -1652,7 +1646,7 @@ withWindowsWorkspace(
   'a drive root or a share root is refused as a local source, with the reason',
   (ctx) => {
     const driveRoot = parsePath(tmpdir()).root;
-    const drive = runInstaller(shell, ctx, ['-Source', `org-ai-plugin=local:${driveRoot}`], {
+    const drive = runInstaller(ctx, ['-Source', `org-ai-plugin=local:${driveRoot}`], {
       apply: false,
     });
     assert.notEqual(drive.status, 0, 'a drive root was accepted as a layer source');
@@ -1662,7 +1656,7 @@ withWindowsWorkspace(
       drive.stdout,
     );
 
-    const share = runInstaller(shell, ctx, ['-Source', 'org-ai-plugin=local://server/share'], {
+    const share = runInstaller(ctx, ['-Source', 'org-ai-plugin=local://server/share'], {
       apply: false,
     });
     assert.notEqual(share.status, 0, 'a share root was accepted as a layer source');
@@ -1674,7 +1668,6 @@ withWindowsWorkspace(
 // Round 2, G: a junction under the temp folder that leads outside it does not turn on the test root.
 test(
   'a junction under the temp folder that leads outside it does not turn on the test root',
-  { skip },
   () => {
     const junction = join(tmpdir(), `maxstack-jct-${process.pid}`);
     symlinkSync(repoRoot, junction, 'junction');
@@ -1731,12 +1724,9 @@ withWorkspace(
 withWindowsWorkspace(
   'a long-path UNC share is refused as a share root, not read as a folder under the current directory',
   (ctx) => {
-    const run = runInstaller(
-      shell,
-      ctx,
-      ['-Source', 'org-ai-plugin=local:\\\\?\\UNC\\server\\share'],
-      { apply: false },
-    );
+    const run = runInstaller(ctx, ['-Source', 'org-ai-plugin=local:\\\\?\\UNC\\server\\share'], {
+      apply: false,
+    });
     assert.notEqual(run.status, 0, 'a long-path UNC share was accepted as a layer source');
     // A device prefix is refused by its text, before any path is read, so the UNC share is not reached.
     assert.match(plainOutput(run), /UNC or device path/, run.stdout);
@@ -1755,7 +1745,7 @@ withWorkspace(
     sourceBlockIn(lock, 'org-ai-plugin').path = 'relative/checkout';
     setLock(ctx, lock);
 
-    const status = runInstaller(shell, ctx, ['-Status'], { apply: false });
+    const status = runInstaller(ctx, ['-Status'], { apply: false });
     assertOk(status);
     assert.match(
       plainOutput(status),
@@ -1764,7 +1754,7 @@ withWorkspace(
     );
     assert.doesNotMatch(plainOutput(status), /absolute path\.\./, plainOutput(status));
 
-    const apply = runInstaller(shell, ctx, []);
+    const apply = runInstaller(ctx, []);
     assert.notEqual(apply.status, 0, 'an apply wrote a layer whose recorded path is relative');
     assert.match(
       plainOutput(apply),
@@ -1772,43 +1762,6 @@ withWorkspace(
       plainOutput(apply),
     );
     assert.doesNotMatch(plainOutput(apply), /absolute path\.\./, plainOutput(apply));
-  },
-  {},
-);
-
-// A workspace reached through a junction keeps the path the user gave: upstream main writes under that path and records its
-// leaf name in the lock, so the resolved folder is used only for the checks.
-withMainCommit(
-  'a workspace reached through a junction keeps the given path in the lock and the output, as upstream main does',
-  (ctx) => {
-    const mainInstaller = exportMainInstaller(ctx.base);
-    const layersFile = writeLayers(ctx);
-    const linkParent = join(ctx.base, 'junction-parent');
-    const linkPath = join(linkParent, 'linkname');
-    mkdirSync(linkParent);
-    symlinkSync(ctx.workspace, linkPath, 'junction');
-    const linkCtx = { ...ctx, workspace: linkPath };
-
-    clearInstallOutputs(ctx.workspace);
-    const mainRun = runInstaller(shell, linkCtx, [], { layersFile, installerPath: mainInstaller });
-    assert.equal(mainRun.status, 0, `${mainRun.stdout}${mainRun.stderr}`);
-    const mainLock = readJson(join(ctx.workspace, 'stack.lock.json'));
-
-    clearInstallOutputs(ctx.workspace);
-    const newRun = runInstaller(shell, linkCtx, [], { layersFile });
-    assert.equal(newRun.status, 0, `${newRun.stdout}${newRun.stderr}`);
-    assert.equal(
-      newRun.stdout.split(/\r?\n/)[0],
-      `Workspace: ${linkPath} (from -Workspace)`,
-      'the resolved line must keep the given path',
-    );
-    const newLock = readJson(join(ctx.workspace, 'stack.lock.json'));
-    assert.equal(newLock.workspace, 'linkname', 'the lock must record the leaf name the user gave');
-    assert.equal(
-      newLock.workspace,
-      mainLock.workspace,
-      'upstream main records the same workspace name',
-    );
   },
   {},
 );
@@ -1825,7 +1778,7 @@ withWorkspace(
     const modules = join(ctx.workspace, '.opencode', 'plugins', 'pstack', 'node_modules');
     mkdirSync(modules, { recursive: true });
     symlinkSync(sibling, join(modules, 'escape-link'), 'junction');
-    const plan = runInstaller(shell, ctx, ['-Uninstall'], { apply: false });
+    const plan = runInstaller(ctx, ['-Uninstall'], { apply: false });
     assertOk(plan, plainOutput(plan));
     assert.doesNotMatch(
       plainOutput(plan),
@@ -1833,7 +1786,7 @@ withWorkspace(
       'the plan deletes an owned folder that holds a link to outside the workspace',
     );
     assert.match(plainOutput(plan), /SKIP \.opencode\/plugins\/pstack /, plainOutput(plan));
-    const uninstall = runInstaller(shell, ctx, ['-Uninstall'], { apply: true });
+    runInstaller(ctx, ['-Uninstall'], { apply: true });
     assert.ok(
       existsSync(join(sibling, 'keep.txt')),
       'a removal reached the sibling folder through the junction',
@@ -1857,7 +1810,7 @@ withWorkspace(
     delete record.claude;
     writeFileSync(lockPath(ctx), JSON.stringify(lock));
     const before = readFileSync(lockPath(ctx), 'utf8');
-    const status = runInstaller(shell, ctx, ['-Status'], { apply: false });
+    const status = runInstaller(ctx, ['-Status'], { apply: false });
     assert.notEqual(status.status, 0, plainOutput(status));
     assert.match(
       plainOutput(status),
@@ -1885,7 +1838,7 @@ withWorkspace(
       override: 'true',
     };
     writeFileSync(lockPath(ctx), JSON.stringify(lock));
-    const status = runInstaller(shell, ctx, ['-Status'], { apply: false });
+    const status = runInstaller(ctx, ['-Status'], { apply: false });
     assert.doesNotMatch(plainOutput(status), /pstack: override, git/, plainOutput(status));
   },
   {},
