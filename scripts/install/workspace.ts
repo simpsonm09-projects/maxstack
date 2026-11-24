@@ -3562,6 +3562,7 @@ export function invokeUpdatePi(options: WorkspaceInstallerOptions): number {
   }
   const run = spawnSync('npm', ['install', '--prefix', piPrefix, ...safetyArgs, packageSpec], {
     stdio: 'inherit',
+    windowsHide: true,
   });
   if (run.error || run.status !== 0) throw new Error(`npm install failed in ${piPrefix}`);
   writeHost(`Pi version after: ${String(getField(readPackage(), 'version'))}`);
@@ -4816,7 +4817,7 @@ export function runWorkspaceInstaller(options: WorkspaceInstallerOptions): numbe
       const run = spawnSync(
         'npm',
         ['install', '--prefix', installDir, '--omit=dev', '--no-audit', '--no-fund', '--ignore-scripts'],
-        { stdio: 'inherit' },
+        { stdio: 'inherit', windowsHide: true },
       );
       if (run.error || run.status !== 0) throw new Error(`npm install failed in ${installDir}`);
       writeIgnoredScriptWarning(layer.name, installDir);

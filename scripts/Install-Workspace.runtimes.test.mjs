@@ -71,7 +71,10 @@ import {
 // absolute, because a test may replace PATH for the child it spawns.
 function findBash() {
   if (process.platform !== 'win32') {
-    const found = spawnSync('sh', ['-c', 'command -v bash'], { encoding: 'utf8' });
+    const found = spawnSync('sh', ['-c', 'command -v bash'], {
+      encoding: 'utf8',
+      windowsHide: true,
+    });
     return found.status === 0 && found.stdout.trim() ? found.stdout.trim() : null;
   }
   const gitBash = join(

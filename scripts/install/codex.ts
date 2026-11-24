@@ -566,6 +566,7 @@ export function getCodexHookConfigPlan(layers: readonly LayerModel[], openCodeSe
     const script = join(S.repoRoot, 'scripts', CODEX_HOOK_STATUS_SCRIPT);
     const run = spawnSync(process.execPath, [script, '--workspace', S.workspace, '--hook-command', command], {
       encoding: 'utf8',
+      windowsHide: true,
     });
     const output = `${run.stdout ?? ''}${run.stderr ?? ''}`;
     if (run.status === 0) {
