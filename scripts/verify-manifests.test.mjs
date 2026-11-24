@@ -24,6 +24,13 @@ function findPython() {
 const python = findPython();
 const skip = python ? false : 'python is not available';
 
+// A Git hook exports GIT_DIR and GIT_WORK_TREE; they win over `cwd`, so the
+// throwaway repository below would otherwise be the caller's checkout.
+const gitEnv = { ...process.env };
+for (const name of Object.keys(gitEnv)) {
+  if (name.startsWith('GIT_')) delete gitEnv[name];
+}
+
 function shipped(path) {
   return JSON.parse(readFileSync(join(repoRoot, path), 'utf8'));
 }
@@ -99,11 +106,11 @@ function runVerifier({
       writeFileSync(join(root, rel), content);
     }
     if (Object.keys(tracked).length > 0) {
-      spawnSync('git', ['init', '-q'], { windowsHide: true, cwd: root });
+      spawnSync('git', ['init', '-q'], { windowsHide: true, cwd: root, env: gitEnv });
       for (const [rel, content] of Object.entries(tracked)) {
         mkdirSync(dirname(join(root, rel)), { recursive: true });
         writeFileSync(join(root, rel), content);
-        spawnSync('git', ['add', '--', rel], { windowsHide: true, cwd: root });
+        spawnSync('git', ['add', '--', rel], { windowsHide: true, cwd: root, env: gitEnv });
       }
     }
     const args = [join(root, 'scripts', 'verify-manifests.py')];
@@ -111,7 +118,7 @@ function runVerifier({
       writeFileSync(join(root, 'stack.lock.json'), JSON.stringify(lock));
       args.push('--lock', join(root, 'stack.lock.json'));
     }
-    return spawnSync(python, args, { windowsHide: true, encoding: 'utf8' });
+    return spawnSync(python, args, { windowsHide: true, encoding: 'utf8', env: gitEnv });
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

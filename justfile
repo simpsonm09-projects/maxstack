@@ -114,9 +114,11 @@ commit-msg file:
 hook-pre-push:
     mise exec -- node scripts/git-hook.ts pre-push
 
-# Fast pre-push subset, under 30 seconds (C7.10).
+# Fast pre-push subset, under 30 seconds (C7.10). It runs the same recipes the
+# required checks run, so CI confirms what the hook already caught (C5.7).
 pre-push-check:
     just fmt-check
+    just lint
     just test
 
 # Refresh locked dependencies when a manifest changed (C7.10).
