@@ -6,8 +6,8 @@ The opt-in `antigravity` runtime installs selected layer skills in the workspace
 
 Pass `antigravity` to `-Runtimes`:
 
-```powershell
-pwsh -File scripts/Install-Workspace.ps1 -Workspace <workspace> -Runtimes antigravity -Apply
+```bash
+just install-workspace -Workspace <workspace> -Runtimes antigravity -Apply
 ```
 
 You can also add `antigravity` to the `runtimes` map in `maxstack.settings.json`. The default runtime selection does not include it. `-Runtimes all` does.

@@ -1,6 +1,6 @@
 # Neutral layer generator
 
-The generator projects the skills and OpenCode MCP servers of layer checkouts into a dedicated output directory for one runtime. It is a standalone step. It does not select layers, write a workspace, or change the installer. Installation stays with `scripts/Install-Workspace.ps1`.
+The generator projects the skills and OpenCode MCP servers of layer checkouts into a dedicated output directory for one runtime. It is a standalone step. It does not select layers, write a workspace, or change the installer. Installation stays with the installer in `scripts/install/`.
 
 ## Usage
 
@@ -9,7 +9,7 @@ just generate-layers <runtime> <out> '<root>;<root>' [--check]
 node scripts/generate-layers.mjs --runtime <claude|copilot|opencode|pi> --out <dir> --layers <root> [--layers <root>...] [--check]
 ```
 
-- The `just` recipe quotes each argument for its shell: PowerShell on Windows, POSIX `sh` elsewhere. Paths may therefore contain spaces and apostrophes.
+- The `just` recipe quotes each argument for the POSIX `sh` it runs in. Paths may therefore contain spaces and apostrophes.
 - `--runtime` is one of `claude`, `copilot`, `opencode`, or `pi`.
 - `--layers` repeats. A value may hold several roots separated by `;`, except that a value which is itself an existing directory (or `name=<existing directory>`) is one root, so a directory name may contain `;`. A root may be `name=path`. Without a name, the layer is named after its folder. Names are lowercase letters, digits, and hyphens.
 - Order is precedence. A later layer overrides an MCP server of the same name.

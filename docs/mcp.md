@@ -1,6 +1,6 @@
 # MCP servers
 
-`maxstack` composes the OpenCode configuration for the `<workspace>` workspace from ordered layers. `scripts/Install-Workspace.ps1 -Apply` merges the layer fragments over [`workspace/opencode.jsonc`](../workspace/opencode.jsonc) and writes the result to `<workspace>\opencode.jsonc`. It applies only inside that workspace. The layers and their pinned commits are recorded in `stack.lock.json` in the workspace root.
+`maxstack` composes the OpenCode configuration for the `<workspace>` workspace from ordered layers. `just install-workspace -Apply` merges the layer fragments over [`workspace/opencode.jsonc`](../workspace/opencode.jsonc) and writes the result to `<workspace>/opencode.jsonc`. It applies only inside that workspace. The layers and their pinned commits are recorded in `stack.lock.json` in the workspace root.
 
 Precedence is personal over org over the base. The org layer and the personal layer each contribute no MCP server by default, so the composed default set is empty.
 
@@ -68,7 +68,7 @@ Remote secrets use `{env:NAME}`. Never write a secret into the config.
 
 ## Layer plugin entries
 
-A config layer can also register skills through an OpenCode plugin. `org-ai-plugin` and `personal-ai-plugin` each carry an `index.ts`, a `package.json`, and a `skills/` directory. `Install-Workspace.ps1` copies them into `.opencode/plugins/org-ai-plugin` and `.opencode/plugins/personal-ai-plugin`, and OpenCode loads them next to `pstack`, whose entry is named in `opencode.jsonc`.
+A config layer can also register skills through an OpenCode plugin. `org-ai-plugin` and `personal-ai-plugin` each carry an `index.ts`, a `package.json`, and a `skills/` directory. The installer copies them into `.opencode/plugins/org-ai-plugin` and `.opencode/plugins/personal-ai-plugin`, and OpenCode loads them next to `pstack`, whose entry is named in `opencode.jsonc`.
 
 | Plugin | Skill | Purpose |
 | --- | --- | --- |
@@ -80,4 +80,4 @@ A config layer can also register skills through an OpenCode plugin. `org-ai-plug
 | `personal-ai-plugin` | `dev-tools` | Where each personal tool's settings live and how to apply them. |
 | `personal-ai-plugin` | `discord` | Discord through the `discli` CLI. |
 
-Add a skill by creating `skills/<id>/SKILL.md` in the layer repository, then rerun `Install-Workspace.ps1 -Apply`, restart the running OpenCode server, and start a new T3 session.
+Add a skill by creating `skills/<id>/SKILL.md` in the layer repository, then rerun `just install-workspace -Apply`, restart the running OpenCode server, and start a new T3 session.

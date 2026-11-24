@@ -21,9 +21,9 @@ The installer prints `Workspace: <absolute path> (from <origin>)` as its first l
 
 For example, set the environment for repeated commands:
 
-```powershell
+```bash
 $env:MAXSTACK_WORKSPACE = '.'
-pwsh -File scripts/Install-Workspace.ps1 -Status
+just install-workspace -Status
 ```
 
 ## Settings file
@@ -73,7 +73,7 @@ A declaration that cannot be used is unavailable. That covers a missing or unrea
 
 `os` accepts `auto`, `windows`, `macos`, or `linux`. A mismatch is allowed during audit and dry run. Apply refuses a mismatch before source resolution or writes. `t3.snapshot` accepts a boolean and controls the implemented explicit-source snapshot and drift report. `t3.defaults` accepts `leave-alone` or `apply-defaults`. Only `leave-alone` acts in this release. `apply-defaults` is reported as unsupported, and T3 settings are left alone. T3 settings remain user-owned. See [T3 settings snapshot](t3-settings.md).
 
-The installer accepts strict UTF-8 JSON, including a UTF-8 BOM, with a 64 KiB and 32-level nesting limit, and reads ISO-looking strings as strings, which needs PowerShell 7.5 or later. `scripts/verify_settings.py` applies the same rules, and a test compares the two readers on each case. Comments, trailing commas, duplicate keys, unknown keys, invalid types, and unsupported values fail validation before a write or git command. A directory or a symbolic link at the settings path is refused without reading its target. A file another process holds open is reported as unreadable, not as a .NET error. `-Status` reports a settings error on its own line and still reports the lock. An absent file prints nothing, unless the lock recorded its hash; then it prints `Settings: missing since the last apply.`
+The installer accepts strict UTF-8 JSON, including a UTF-8 BOM, with a 64 KiB and 32-level nesting limit, and reads ISO-looking strings as strings. `scripts/verify_settings.py` applies the same rules, and a test compares the two readers on each case. Comments, trailing commas, duplicate keys, unknown keys, invalid types, and unsupported values fail validation before a write or git command. A directory or a symbolic link at the settings path is refused without reading its target. A file another process holds open is reported as unreadable, not as a .NET error. `-Status` reports a settings error on its own line and still reports the lock. An absent file prints nothing, unless the lock recorded its hash; then it prints `Settings: missing since the last apply.`
 
 The removal modes read the file as follows. A real `-Remove` reads it only to warn about each removed runtime or layer that it still lists, since the next apply selects that name again, and a file it cannot read does not stop the removal. A dry `-Remove` reads it the same tolerant way and reports an unavailable declared source with the skip line above, with no fallback. `-Uninstall`, dry or real, never reads this file: it removes what the lock recorded, so an unreadable or invalid file never stops it, and a dry run says so with `Settings: -Uninstall does not read maxstack.settings.json; it removes what the lock recorded.`
 
